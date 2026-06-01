@@ -64,6 +64,9 @@ export default function RetroGrid({
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
+  // Persistent smooth-lerp viewport camera coordinates
+  const cameraRef = useRef<{ x: number; y: number }>({ x: 12, y: 12 });
+  
   // Persistent, isolated modular effects engine
   const effectsEngineRef = useRef<EffectsEngine>(new EffectsEngine());
 
@@ -291,15 +294,22 @@ export default function RetroGrid({
       const cellSize = canvasSize / VIEWPORT_CELLS; // Always 24px (600 / 25)
 
       // Calculate sliding camera center on the snake head
-      const head = state.snake[0] || { x: 0, y: 0 };
-      let cameraCellX = head.x - Math.floor(VIEWPORT_CELLS / 2);
-      let cameraCellY = head.y - Math.floor(VIEWPORT_CELLS / 2);
+      const head = state.snake[0] || { x: 12, y: 12 };
+      const targetCameraX = head.x - Math.floor(VIEWPORT_CELLS / 2);
+      const targetCameraY = head.y - Math.floor(VIEWPORT_CELLS / 2);
 
-      // Clamp camera offsets within actual map boundaries
-      const maxCameraX = state.gridSize - VIEWPORT_CELLS;
-      const maxCameraY = state.gridSize - VIEWPORT_CELLS;
-      cameraCellX = Math.max(0, Math.min(cameraCellX, maxCameraX));
-      cameraCellY = Math.max(0, Math.min(cameraCellY, maxCameraY));
+      // Snap camera instantly on first load to prevent long scroll from (12,12)
+      if (cameraRef.current.x === 12 && cameraRef.current.y === 12 && head.x !== 12) {
+        cameraRef.current.x = targetCameraX;
+        cameraRef.current.y = targetCameraY;
+      }
+
+      // Smoothly LERP camera position towards the head centered target
+      cameraRef.current.x += (targetCameraX - cameraRef.current.x) * 0.12;
+      cameraRef.current.y += (targetCameraY - cameraRef.current.y) * 0.12;
+
+      const cameraCellX = cameraRef.current.x;
+      const cameraCellY = cameraRef.current.y;
 
       // 1. Clear with matrix grid background
       ctx.fillStyle = state.themeColors.gridBackground;
@@ -729,20 +739,29 @@ export default function RetroGrid({
         ctx.restore();
       }
 
-      // 2. Draw CRT Grid cells
+      // 2. Draw CRT Grid cells (Infinite Grid lines relative to Viewport Camera)
       if (state.showGridLines) {
         ctx.strokeStyle = state.themeColors.gridLine;
         ctx.lineWidth = 1;
-        const totalMapWidth = state.gridSize * cellSize;
-        for (let i = 0; i <= state.gridSize; i++) {
-          ctx.beginPath();
-          ctx.moveTo(i * cellSize, 0);
-          ctx.lineTo(i * cellSize, totalMapWidth);
-          ctx.stroke();
 
+        const startX = Math.floor(cameraCellX) - 1;
+        const endX = Math.ceil(cameraCellX) + VIEWPORT_CELLS + 1;
+        const startY = Math.floor(cameraCellY) - 1;
+        const endY = Math.ceil(cameraCellY) + VIEWPORT_CELLS + 1;
+
+        // Draw vertical lines
+        for (let i = startX; i <= endX; i++) {
           ctx.beginPath();
-          ctx.moveTo(0, i * cellSize);
-          ctx.lineTo(totalMapWidth, i * cellSize);
+          ctx.moveTo(i * cellSize, startY * cellSize);
+          ctx.lineTo(i * cellSize, endY * cellSize);
+          ctx.stroke();
+        }
+
+        // Draw horizontal lines
+        for (let j = startY; j <= endY; j++) {
+          ctx.beginPath();
+          ctx.moveTo(startX * cellSize, j * cellSize);
+          ctx.lineTo(endX * cellSize, j * cellSize);
           ctx.stroke();
         }
       }
