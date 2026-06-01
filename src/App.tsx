@@ -85,6 +85,7 @@ function AppContent() {
     terrainDecorations,
     breachActive,
     hasEscapedCabinet,
+    entities,
   } = useSnakeEngine({
     difficulty,
     themeLocked,
@@ -453,6 +454,7 @@ function AppContent() {
                   terrainDecorations={terrainDecorations}
                   breachActive={breachActive}
                   hasEscapedCabinet={hasEscapedCabinet}
+                  entities={entities}
                 />
 
                 {touchControlsPreference === 'ON' && (

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Position, ThemeColors, RetroTheme, Direction, GameStatus } from '../types';
+import { Position, ThemeColors, RetroTheme, Direction, GameStatus, AIEntity } from '../types';
 import { EffectsEngine } from '../utils/effectsManager';
 import { TerrainDecoration } from '../utils/terrainManager';
 import { sfx } from '../utils/audio';
@@ -39,6 +39,9 @@ interface RetroGridProps {
   // Open World cabinet escape props
   breachActive?: boolean;
   hasEscapedCabinet?: boolean;
+
+  // AI Prey Ecosystem Entities
+  entities?: AIEntity[];
 }
 
 export default function RetroGrid({
@@ -67,6 +70,7 @@ export default function RetroGrid({
   biome = 'GLITCH_VOID',
   breachActive = false,
   hasEscapedCabinet = false,
+  entities = [],
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -116,6 +120,7 @@ export default function RetroGrid({
     biome,
     breachActive,
     hasEscapedCabinet,
+    entities,
   });
 
   // Previous status monitors to dynamically spawn beautiful juices
@@ -125,6 +130,7 @@ export default function RetroGrid({
   const prevStatusRef = useRef<GameStatus>(gameStatus);
   const prevSlipstreamRef = useRef<'NONE' | 'DRIFT'>('NONE');
   const prevRivalsRef = useRef<RivalSerpent[]>([]);
+  const prevEntitiesRef = useRef<AIEntity[]>([]);
 
   // Synchronize dynamic updates for high-performance retrieval inside the 60fps raf loop
   useEffect(() => {
@@ -153,8 +159,9 @@ export default function RetroGrid({
       biome,
       breachActive,
       hasEscapedCabinet,
+      entities,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -186,6 +193,20 @@ export default function RetroGrid({
       }
     });
     prevRivalsRef.current = rivals;
+
+    // Prey Mice consumption juices check
+    prevEntitiesRef.current.forEach((prevEntity) => {
+      const stillAlive = entities.some((e) => e.id === prevEntity.id && e.alive);
+      if (!stillAlive && prevEntity.alive) {
+        // Trigger spark burst
+        engine.spawnBurst(prevEntity.x, prevEntity.y, cellSize, '#fbbf24', 18);
+        engine.spawnShockwave(prevEntity.x, prevEntity.y, cellSize, '#fbbf24', 140);
+        engine.spawnFloatingText(prevEntity.x, prevEntity.y, cellSize, 'EAT PREY! +30 ✨ +5 🪙', '#fbbf24');
+        engine.triggerShake(8);
+        engine.triggerFlash('rgba(251, 191, 36, 0.12)', 0.5, 0.04);
+      }
+    });
+    prevEntitiesRef.current = entities;
 
     // 1. Scoring event reactions (Standard Apple vs Legendary Golden Star Apple)
     if (score > prevScoreRef.current) {
@@ -242,7 +263,7 @@ export default function RetroGrid({
     prevFoodRef.current = food;
     prevGoldenFoodRef.current = goldenFood;
     prevStatusRef.current = gameStatus;
-  }, [score, food, goldenFood, gameStatus, gridSize, snake, themeColors.food]);
+  }, [score, food, goldenFood, gameStatus, gridSize, snake, themeColors.food, entities]);
 
   // Trigger Open World breach and escape visual effects
   useEffect(() => {
@@ -1129,6 +1150,99 @@ export default function RetroGrid({
           ctx.restore();
         }
       });
+
+      // 6.25. Draw Prey Entities (Mice)
+      if (state.entities && state.entities.length > 0) {
+        state.entities.forEach((entity) => {
+          if (!entity.alive) return;
+          const x = entity.x * cellSize;
+          const y = entity.y * cellSize;
+          const centerX = x + cellSize / 2;
+          const centerY = y + cellSize / 2;
+
+          ctx.save();
+
+          const time = Date.now() / 150;
+
+          // Tail: squiggly thin pink line trailing behind it
+          ctx.strokeStyle = '#f472b6';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          const wiggleFactor = entity.behaviorState === 'FLEEING' ? 2 : 1;
+          const tailWiggle = Math.sin(time * 2.2 * wiggleFactor) * 3.5;
+          ctx.bezierCurveTo(
+            centerX - 4, centerY + 6 + tailWiggle,
+            centerX - 8, centerY + 8 - tailWiggle,
+            centerX - 12, centerY + 12 + tailWiggle
+          );
+          ctx.stroke();
+
+          // Body: a rounded grey/white circle centered in the cell
+          ctx.fillStyle = '#9ca3af';
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Highlight
+          ctx.fillStyle = '#e5e7eb';
+          ctx.beginPath();
+          ctx.arc(centerX - 1.2, centerY - 1.2, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Infer orientation facing away from player head (if fleeing) or towards (if wandering)
+          let headOffsetX = 0;
+          let headOffsetY = 0;
+          let earOffsetX1 = 0, earOffsetY1 = 0;
+          let earOffsetX2 = 0, earOffsetY2 = 0;
+
+          const dx = centerX - (head.x * cellSize + cellSize / 2);
+          const dy = centerY - (head.y * cellSize + cellSize / 2);
+
+          if (entity.behaviorState === 'FLEEING') {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              headOffsetX = dx > 0 ? 4 : -4;
+              earOffsetX1 = dx > 0 ? 2 : -2; earOffsetY1 = -3.5;
+              earOffsetX2 = dx > 0 ? 2 : -2; earOffsetY2 = 3.5;
+            } else {
+              headOffsetY = dy > 0 ? 4 : -4;
+              earOffsetX1 = -3.5; earOffsetY1 = dy > 0 ? 2 : -2;
+              earOffsetX2 = 3.5; earOffsetY2 = dy > 0 ? 2 : -2;
+            }
+          } else {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              headOffsetX = dx > 0 ? -4 : 4;
+              earOffsetX1 = dx > 0 ? -2 : 2; earOffsetY1 = -3.5;
+              earOffsetX2 = dx > 0 ? -2 : 2; earOffsetY2 = 3.5;
+            } else {
+              headOffsetY = dy > 0 ? -4 : 4;
+              earOffsetX1 = -3.5; earOffsetY1 = dy > 0 ? -2 : 2;
+              earOffsetX2 = 3.5; earOffsetY2 = dy > 0 ? -2 : 2;
+            }
+          }
+
+          // Ears
+          ctx.fillStyle = '#f472b6';
+          ctx.beginPath();
+          ctx.arc(centerX + earOffsetX1, centerY + earOffsetY1, 1.8, 0, Math.PI * 2);
+          ctx.arc(centerX + earOffsetX2, centerY + earOffsetY2, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Head
+          ctx.fillStyle = '#9ca3af';
+          ctx.beginPath();
+          ctx.arc(centerX + headOffsetX, centerY + headOffsetY, 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Nose/eyes dot
+          ctx.fillStyle = '#111827';
+          ctx.beginPath();
+          ctx.arc(centerX + headOffsetX * 1.3, centerY + headOffsetY * 1.3, 0.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.restore();
+        });
+      }
 
       // 6.5. Draw Glitch AI Rival Serpents
       if (state.rivals && state.rivals.length > 0) {

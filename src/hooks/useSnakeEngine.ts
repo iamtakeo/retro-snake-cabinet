@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, Dispatch, SetStateAction } fr
 import {
   Direction,
   Position,
+  AIEntity,
   GameStatus,
   RetroTheme,
   DifficultyLevel,
@@ -9,6 +10,71 @@ import {
   CustomizationState,
   GameModifiers,
 } from '../types';
+
+// Helper to spawn 1 prey mouse inside cabinet bounds (2,2) to (22,22)
+function spawnInitialMouse(currentSnake: Position[], currentObstacles: Position[]): AIEntity {
+  let x = 12;
+  let y = 12;
+  let isValid = false;
+  let tries = 0;
+  while (!isValid && tries < 100) {
+    tries++;
+    x = Math.floor(Math.random() * 21) + 2;
+    y = Math.floor(Math.random() * 21) + 2;
+    const hitsSnake = currentSnake.some(seg => seg.x === x && seg.y === y);
+    const hitsObstacle = currentObstacles.some(obs => obs.x === x && obs.y === y);
+    if (!hitsSnake && !hitsObstacle) {
+      isValid = true;
+    }
+  }
+  return {
+    id: 'mouse_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+    type: 'PREY_MOUSE',
+    x,
+    y,
+    alive: true,
+    ticksSinceMove: 0,
+    speedTicks: 4,
+    behaviorState: 'WANDERING'
+  };
+}
+
+// Helper to spawn 6 prey mice across the 100x100 open world after cabinet escape
+function spawnAdditionalMice(currentSnake: Position[], currentObstacles: Position[], currentEntities: AIEntity[], count = 6): AIEntity[] {
+  const newMice: AIEntity[] = [];
+  const margin = 5;
+  for (let i = 0; i < count; i++) {
+    let x = 0;
+    let y = 0;
+    let isValid = false;
+    let tries = 0;
+    while (!isValid && tries < 100) {
+      tries++;
+      x = Math.floor(Math.random() * (100 - margin * 2)) + margin;
+      y = Math.floor(Math.random() * (100 - margin * 2)) + margin;
+      if (x < 25 && y < 25) continue; // spawn only in open world outer limits
+      
+      const hitsSnake = currentSnake.some(seg => seg.x === x && seg.y === y);
+      const hitsObstacle = currentObstacles.some(obs => obs.x === x && obs.y === y);
+      const hitsExistingNewMice = newMice.some(m => m.x === x && m.y === y);
+      const hitsExistingEntities = currentEntities.some(m => m.alive && m.x === x && m.y === y);
+      if (!hitsSnake && !hitsObstacle && !hitsExistingNewMice && !hitsExistingEntities) {
+        isValid = true;
+      }
+    }
+    newMice.push({
+      id: 'mouse_OW_' + Date.now() + '_' + i + '_' + Math.floor(Math.random() * 1000),
+      type: 'PREY_MOUSE',
+      x,
+      y,
+      alive: true,
+      ticksSinceMove: 0,
+      speedTicks: 4,
+      behaviorState: 'WANDERING'
+    });
+  }
+  return newMice;
+}
 import { ArenaType, generateObstaclesForArena } from '../utils/arenaManager';
 import { TerrainDecoration, generateTerrainDecorations } from '../utils/terrainManager';
 import { sfx } from '../utils/audio';
@@ -89,6 +155,10 @@ export function useSnakeEngine({
   const breachActiveRef = useRef<boolean>(false);
   const hasEscapedCabinetRef = useRef<boolean>(false);
 
+  // AI Prey Ecosystem Entities
+  const [entities, setEntities] = useState<AIEntity[]>([]);
+  const entitiesRef = useRef<AIEntity[]>([]);
+
   // Track state in mutable refs for the optimized game loop
   const snakeRef = useRef<Position[]>([]);
   const directionRef = useRef<Direction>('UP');
@@ -128,7 +198,8 @@ export function useSnakeEngine({
     rivalsRef.current = rivals;
     breachActiveRef.current = breachActive;
     hasEscapedCabinetRef.current = hasEscapedCabinet;
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet]);
+    entitiesRef.current = entities;
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities]);
 
   // Track Game Time Survival
   useEffect(() => {
@@ -256,6 +327,11 @@ export function useSnakeEngine({
     setTerrainDecorations(initialTerrain);
 
     const initialFood = generateRandomCell(initialSnake, initialObstacles, calculatedGridSize);
+
+    // Initial prey mouse spawn inside cabinet
+    const initialMouse = spawnInitialMouse(initialSnake, initialObstacles);
+    setEntities([initialMouse]);
+    entitiesRef.current = [initialMouse];
 
     setSnake(initialSnake);
     setObstacles(initialObstacles);
@@ -745,6 +821,125 @@ export function useSnakeEngine({
 
       const nextSnake = [newHead, ...snakeRef.current];
 
+      // Calculate score & coin yield calibrations multipliers
+      let scoreYieldMultiplier = 1.0;
+      let coinYieldMultiplier = 1.0;
+      if (coinYield === 'SAFE') {
+        scoreYieldMultiplier = 0.8;
+        coinYieldMultiplier = 0.5;
+      } else if (coinYield === 'HIGH_STAKES') {
+        scoreYieldMultiplier = 2.5;
+        coinYieldMultiplier = 2.0;
+      }
+
+      // Update prey entities positions & AI State Machine
+      let ateMouse = false;
+      const updatedEntities = entitiesRef.current.map((entity): AIEntity => {
+        if (!entity.alive) return entity;
+
+        // Proximity fleeing distance calculation (Manhattan distance to snake head)
+        const distance = Math.abs(entity.x - newHead.x) + Math.abs(entity.y - newHead.y);
+
+        // State Machine transitions
+        let nextState: 'WANDERING' | 'FLEEING' = 'WANDERING';
+        let speedTicks = 4;
+        if (distance < 6) {
+          nextState = 'FLEEING';
+          speedTicks = 2;
+        }
+
+        const nextTicksSinceMove = entity.ticksSinceMove + 1;
+        let nextX = entity.x;
+        let nextY = entity.y;
+        let finalTicksSinceMove = nextTicksSinceMove;
+
+        if (nextTicksSinceMove >= speedTicks) {
+          finalTicksSinceMove = 0; // reset ticks
+
+          // Find adjacent cells
+          const adjacent = [
+            { x: entity.x, y: entity.y - 1 }, // UP
+            { x: entity.x, y: entity.y + 1 }, // DOWN
+            { x: entity.x - 1, y: entity.y }, // LEFT
+            { x: entity.x + 1, y: entity.y }, // RIGHT
+          ];
+
+          const maxGridLimit = hasEscapedCabinetRef.current ? 100 : 25;
+
+          // Filter safe cells
+          const safeTiles = adjacent.filter(tile => {
+            if (tile.x < 0 || tile.x >= maxGridLimit || tile.y < 0 || tile.y >= maxGridLimit) {
+              return false;
+            }
+            if (obstaclesRef.current.some(obs => obs.x === tile.x && obs.y === tile.y)) {
+              return false;
+            }
+            if (nextSnake.some(seg => seg.x === tile.x && seg.y === tile.y)) {
+              return false;
+            }
+            if (rivalsRef.current.some(r => r.alive && r.body.some(seg => seg.x === tile.x && seg.y === tile.y))) {
+              return false;
+            }
+            return true;
+          });
+
+          if (safeTiles.length > 0) {
+            if (nextState === 'FLEEING') {
+              // Path maximizing Manhattan distance to player head
+              let maxDist = -1;
+              let bestTile = safeTiles[0];
+              safeTiles.forEach(tile => {
+                const d = Math.abs(tile.x - newHead.x) + Math.abs(tile.y - newHead.y);
+                if (d > maxDist) {
+                  maxDist = d;
+                  bestTile = tile;
+                }
+              });
+              nextX = bestTile.x;
+              nextY = bestTile.y;
+            } else {
+              // WANDERING - pick randomly
+              const randomTile = safeTiles[Math.floor(Math.random() * safeTiles.length)];
+              nextX = randomTile.x;
+              nextY = randomTile.y;
+            }
+          }
+        }
+
+        return {
+          ...entity,
+          x: nextX,
+          y: nextY,
+          ticksSinceMove: finalTicksSinceMove,
+          speedTicks,
+          behaviorState: nextState
+        };
+      });
+
+      // Harvest / Consumption checks
+      const finalEntities = updatedEntities.map(entity => {
+        if (entity.alive && newHead.x === entity.x && newHead.y === entity.y) {
+          entity.alive = false;
+          ateMouse = true;
+          sfx.playEat();
+          
+          const addedScore = Math.round(30 * difficultyConfig.scoreMultiplier * scoreYieldMultiplier);
+          setScore((prev) => prev + addedScore);
+          scoreRef.current += addedScore;
+
+          const earnedCoinsNum = Math.max(5, Math.round(5 * difficultyConfig.scoreMultiplier * coinYieldMultiplier));
+          setCoinsEarnedThisRun((prev) => prev + earnedCoinsNum);
+          setCustomization((prev) => ({
+            ...prev,
+            coins: prev.coins + earnedCoinsNum,
+          }));
+        }
+        return entity;
+      });
+
+      setEntities(finalEntities);
+      entitiesRef.current = finalEntities;
+
       let ateFood = false;
       let ateGolden = false;
 
@@ -760,17 +955,6 @@ export function useSnakeEngine({
       ) {
         ateGolden = true;
         sfx.playGoldenEat();
-      }
-
-      // Calculate score & coin yield calibrations multipliers
-      let scoreYieldMultiplier = 1.0;
-      let coinYieldMultiplier = 1.0;
-      if (coinYield === 'SAFE') {
-        scoreYieldMultiplier = 0.8;
-        coinYieldMultiplier = 0.5;
-      } else if (coinYield === 'HIGH_STAKES') {
-        scoreYieldMultiplier = 2.5;
-        coinYieldMultiplier = 2.0;
       }
 
       if (ateFood) {
@@ -815,7 +999,7 @@ export function useSnakeEngine({
 
       // Metabolic Growth factor segment updates
       let growThisTick = false;
-      if (ateFood || ateGolden) {
+      if (ateFood || ateGolden || ateMouse) {
         if (growthFactor === 1) {
           growThisTick = true;
         } else if (growthFactor === 2) {
@@ -854,6 +1038,12 @@ export function useSnakeEngine({
         setCurrentGridSize(100);
         currentGridSizeRef.current = 100;
         sfx.playPowerUp();
+
+        // Spawn 6 additional prey mice across the 100x100 open world
+        const extraMice = spawnAdditionalMice(nextSnake, obstaclesRef.current, entitiesRef.current, 6);
+        const allMice = [...entitiesRef.current, ...extraMice];
+        setEntities(allMice);
+        entitiesRef.current = allMice;
       }
 
       // Safe vs High Stakes speed calibrations
@@ -913,6 +1103,9 @@ export function useSnakeEngine({
     // Open world cabinet breach escape states
     breachActive,
     hasEscapedCabinet,
+
+    // Expose entities to props
+    entities,
   };
 }
 

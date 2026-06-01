@@ -5,6 +5,17 @@ export interface Position {
   y: number;
 }
 
+export interface AIEntity {
+  id: string;
+  type: 'PREY_MOUSE';
+  x: number;
+  y: number;
+  alive: boolean;
+  ticksSinceMove: number;
+  speedTicks: number;
+  behaviorState: 'WANDERING' | 'FLEEING';
+}
+
 export type GameStatus = 'MENU' | 'PLAYING' | 'PAUSED' | 'GAMEOVER' | 'SETTINGS' | 'CONTROLS' | 'SHOP';
 
 export type RetroTheme = 'GREEN_PHOSPHOR' | 'AMBER_CRT' | 'CLASSIC_LCD' | 'CYBERPUNK' | 'MONOCHROME_POCKET';
