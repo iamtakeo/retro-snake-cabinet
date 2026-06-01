@@ -194,12 +194,24 @@ export function useSnakeEngine({
     obstaclesRef.current = obstacles;
     scoreRef.current = score;
     statusRef.current = status;
-    currentGridSizeRef.current = currentGridSize;
     rivalsRef.current = rivals;
-    breachActiveRef.current = breachActive;
-    hasEscapedCabinetRef.current = hasEscapedCabinet;
     entitiesRef.current = entities;
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities]);
+
+    // Unidirectional safety guards to prevent React asynchronous batching race conditions from overwriting refs back to false
+    if (status === 'MENU') {
+      breachActiveRef.current = false;
+      hasEscapedCabinetRef.current = false;
+      currentGridSizeRef.current = arenaType === 'LARGE_EXPANSION' ? 50 : 25;
+    } else {
+      if (breachActive) breachActiveRef.current = true;
+      if (hasEscapedCabinet) {
+        hasEscapedCabinetRef.current = true;
+        currentGridSizeRef.current = 100;
+      } else {
+        currentGridSizeRef.current = currentGridSize;
+      }
+    }
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType]);
 
   // Track Game Time Survival
   useEffect(() => {
@@ -425,8 +437,31 @@ export function useSnakeEngine({
           lastDirectorActionTickRef.current = gameTicksRef.current;
           const isLeft = Math.random() < 0.5;
           const isTop = Math.random() < 0.5;
-          const rX = isLeft ? 2 : currentGridSizeRef.current - 3;
-          const rY = isTop ? 2 : currentGridSizeRef.current - 3;
+          let rX = isLeft ? 2 : currentGridSizeRef.current - 3;
+          let rY = isTop ? 2 : currentGridSizeRef.current - 3;
+
+          // Find safe spawn coordinates that don't overlap player segments or obstacles
+          let tries = 0;
+          let isSafe = false;
+          while (!isSafe && tries < 20) {
+            const tempBody = [
+              { x: rX, y: rY },
+              { x: rX, y: rY + 1 },
+              { x: rX, y: rY + 2 }
+            ];
+            const overlapsPlayer = tempBody.some(rSeg => snakeRef.current.some(pSeg => pSeg.x === rSeg.x && pSeg.y === rSeg.y));
+            const overlapsObstacle = tempBody.some(rSeg => obstaclesRef.current.some(obs => obs.x === rSeg.x && obs.y === rSeg.y));
+            
+            if (!overlapsPlayer && !overlapsObstacle) {
+              isSafe = true;
+            } else {
+              rX = (rX + 5) % currentGridSizeRef.current;
+              rY = (rY + 5) % currentGridSizeRef.current;
+              if (rX < 2) rX = 2;
+              if (rY < 2) rY = 2;
+              tries++;
+            }
+          }
           
           const rSnake = [
             { x: rX, y: rY },
@@ -971,12 +1006,12 @@ export function useSnakeEngine({
           coins: prev.coins + earnedCoinsNum,
         }));
 
-        const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSize);
+        const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
         setFood(nextFood);
 
         const rollGolden = Math.random() < 0.3 && !goldenFoodRef.current;
         if (rollGolden) {
-          const nextGold = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSize, nextFood);
+          const nextGold = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current, nextFood);
           setGoldenFood(nextGold);
           goldenTicksRemainingRef.current = 40;
         }
