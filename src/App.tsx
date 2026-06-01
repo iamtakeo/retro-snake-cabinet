@@ -89,6 +89,8 @@ function AppContent() {
     peers,
     connectionState,
     latency,
+    isResting,
+    setIsResting,
   } = useSnakeEngine({
     difficulty,
     themeLocked,
@@ -156,7 +158,12 @@ function AppContent() {
   const { pressedKeys } = useKeyboardControls({
     gameStatus: status,
     onDirectionChange: handleDirectionChange,
-    onTogglePause: () => setStatus((p) => (p === 'PAUSED' ? 'PLAYING' : 'PAUSED')),
+    onTogglePause: () => {
+      if (status === 'PLAYING') {
+        sfx.playClick();
+        setIsResting((prev) => !prev);
+      }
+    },
     onStartGame: startGame,
     onReturnToMenu: () => {
       sfx.playClick();
@@ -221,10 +228,15 @@ function AppContent() {
             
             {/* Play / Pause toggle */}
             <button 
-              onClick={() => setStatus((p) => (p === 'PAUSED' ? 'PLAYING' : 'PAUSED'))}
+              onClick={() => {
+                if (status === 'PLAYING') {
+                  sfx.playClick();
+                  setIsResting((prev) => !prev);
+                }
+              }}
               className="hover:text-yellow-400 cursor-pointer font-bold transition-colors py-1 px-2 rounded hover:bg-white/5 border border-transparent hover:border-current"
             >
-              {status === 'PAUSED' ? '▶ RESUME' : '⏸ PAUSE'}
+              {status === 'PLAYING' && isResting ? '▶ RESUME' : '⏸ REST'}
             </button>
 
             {/* Volume Toggle */}
@@ -344,8 +356,8 @@ function AppContent() {
                 GAME LIVE
               </span>
               <span className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${status === 'PAUSED' ? 'bg-amber-400 animate-ping' : 'bg-amber-800'}`}></span>
-                PAUSE
+                <span className={`w-1.5 h-1.5 rounded-full ${status === 'PLAYING' && isResting ? 'bg-amber-400 animate-ping' : 'bg-amber-800'}`}></span>
+                STANDBY
               </span>
               <span className="flex items-center gap-1">
                 <span className={`w-1.5 h-1.5 rounded-full ${status === 'GAMEOVER' ? 'bg-red-500 animate-ping' : 'bg-red-800'}`}></span>
@@ -463,14 +475,15 @@ function AppContent() {
                   hasEscapedCabinet={hasEscapedCabinet}
                   entities={entities}
                   peers={peers}
+                  isResting={isResting}
                 />
 
                 {touchControlsPreference === 'ON' && (
                   <TouchController
                     onDirectionChange={handleDirectionChange}
                     currentDirection={direction}
-                    onTogglePause={() => setStatus((p) => (p === 'PAUSED' ? 'PLAYING' : 'PAUSED'))}
-                    isPaused={status === 'PAUSED'}
+                    onTogglePause={() => setIsResting((prev) => !prev)}
+                    isPaused={isResting}
                     isPlaying={true}
                     themeColors={themeColors}
                   />
@@ -479,7 +492,7 @@ function AppContent() {
                 <div className="mt-4 flex items-center gap-1 opacity-40 text-[9px] tracking-wider uppercase font-mono text-center">
                   <span>{difficulty} Difficulty Mode</span>
                   <span>•</span>
-                  <span>Press Space to Pause</span>
+                  <span>Press Space to Rest</span>
                 </div>
               </div>
             )}

@@ -45,6 +45,9 @@ interface RetroGridProps {
 
   // Edge Multiplayer Peers
   peers?: any[];
+
+  // Resting state
+  isResting?: boolean;
 }
 
 export default function RetroGrid({
@@ -75,6 +78,7 @@ export default function RetroGrid({
   hasEscapedCabinet = false,
   entities = [],
   peers = [],
+  isResting = false,
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -126,6 +130,7 @@ export default function RetroGrid({
     hasEscapedCabinet,
     entities,
     peers,
+    isResting,
   });
 
   // Previous status monitors to dynamically spawn beautiful juices
@@ -166,8 +171,9 @@ export default function RetroGrid({
       hasEscapedCabinet,
       entities,
       peers,
+      isResting,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers, isResting]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -1488,6 +1494,21 @@ export default function RetroGrid({
         ctx.font = "16px 'Courier New', Courier, monospace";
         ctx.fillStyle = '#ffffff';
         ctx.fillText('PRESS SPACE BAR TO CONTINUE', canvasSize / 2, canvasSize / 2 + 25);
+      }
+
+      // 8.5. Draw resting / standby indicator
+      if (state.isResting) {
+        ctx.save();
+        ctx.fillStyle = state.themeKey === 'CYBERPUNK' ? '#ec4899' : state.themeColors.snakeHead;
+        ctx.font = "bold 13px 'Courier New', Courier, monospace";
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = ctx.fillStyle;
+        
+        ctx.fillText('⏸ STANDBY', 15, 15);
+        ctx.restore();
       }
 
       // Tick continuous vector math triggers

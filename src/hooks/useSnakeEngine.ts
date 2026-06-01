@@ -157,6 +157,9 @@ export function useSnakeEngine({
   const breachActiveRef = useRef<boolean>(false);
   const hasEscapedCabinetRef = useRef<boolean>(false);
 
+  const [isResting, setIsResting] = useState<boolean>(false);
+  const isRestingRef = useRef<boolean>(false);
+
   // AI Prey Ecosystem Entities
   const [entities, setEntities] = useState<AIEntity[]>([]);
   const entitiesRef = useRef<AIEntity[]>([]);
@@ -213,12 +216,15 @@ export function useSnakeEngine({
     statusRef.current = status;
     rivalsRef.current = rivals;
     entitiesRef.current = entities;
+    isRestingRef.current = isResting;
 
     // Unidirectional safety guards to prevent React asynchronous batching race conditions from overwriting refs back to false
     if (status === 'MENU') {
       breachActiveRef.current = false;
       hasEscapedCabinetRef.current = false;
       currentGridSizeRef.current = arenaType === 'LARGE_EXPANSION' ? 50 : 25;
+      setIsResting(false);
+      isRestingRef.current = false;
     } else {
       if (breachActive) breachActiveRef.current = true;
       if (hasEscapedCabinet) {
@@ -228,7 +234,7 @@ export function useSnakeEngine({
         currentGridSizeRef.current = currentGridSize;
       }
     }
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType]);
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType, isResting]);
 
   // Track Game Time Survival
   useEffect(() => {
@@ -596,6 +602,89 @@ export function useSnakeEngine({
       }
 
       // (Laser gates flash states are now calculated once at the top of the tick loop)
+
+      if (isRestingRef.current) {
+        // Safe standby tick: player snake remains static, but simulated peers, rivals, and prey continue active exploration.
+        
+        // Update Edge P2P Simulated active peers
+        updateSimulatedPeers(snakeRef.current, obstaclesRef.current, foodRef.current, currentGridSizeRef.current, () => {
+          sfx.playEat();
+          const nextFood = generateRandomCell(snakeRef.current, obstaclesRef.current, currentGridSizeRef.current);
+          setFood(nextFood);
+          foodRef.current = nextFood;
+        });
+
+        // Update prey entities positions & AI State Machine (static snake as reference)
+        const updatedEntities = entitiesRef.current.map((entity): AIEntity => {
+          if (!entity.alive) return entity;
+          const distance = Math.abs(entity.x - snakeRef.current[0].x) + Math.abs(entity.y - snakeRef.current[0].y);
+          let nextState: 'WANDERING' | 'FLEEING' = 'WANDERING';
+          let speedTicks = 4;
+          if (distance < 6) {
+            nextState = 'FLEEING';
+            speedTicks = 2;
+          }
+          const nextTicksSinceMove = entity.ticksSinceMove + 1;
+          let nextX = entity.x;
+          let nextY = entity.y;
+          let finalTicksSinceMove = nextTicksSinceMove;
+
+          if (nextTicksSinceMove >= speedTicks) {
+            finalTicksSinceMove = 0;
+            const adjacent = [
+              { x: entity.x, y: entity.y - 1 },
+              { x: entity.x, y: entity.y + 1 },
+              { x: entity.x - 1, y: entity.y },
+              { x: entity.x + 1, y: entity.y },
+            ];
+            const maxGridLimit = hasEscapedCabinetRef.current ? 100 : 25;
+            const safeTiles = adjacent.filter(tile => {
+              if (tile.x < 0 || tile.x >= maxGridLimit || tile.y < 0 || tile.y >= maxGridLimit) return false;
+              if (obstacleSet.has(`${tile.x},${tile.y}`)) return false;
+              if (snakeRef.current.some(seg => seg.x === tile.x && seg.y === tile.y)) return false;
+              if (rivalsRef.current.some(r => r.alive && r.body.some(seg => seg.x === tile.x && seg.y === tile.y))) return false;
+              return true;
+            });
+            if (safeTiles.length > 0) {
+              if (nextState === 'FLEEING') {
+                let maxDist = -1;
+                let bestTile = safeTiles[0];
+                safeTiles.forEach(tile => {
+                  const d = Math.abs(tile.x - snakeRef.current[0].x) + Math.abs(tile.y - snakeRef.current[0].y);
+                  if (d > maxDist) {
+                    maxDist = d;
+                    bestTile = tile;
+                  }
+                });
+                nextX = bestTile.x;
+                nextY = bestTile.y;
+              } else {
+                const randomTile = safeTiles[Math.floor(Math.random() * safeTiles.length)];
+                nextX = randomTile.x;
+                nextY = randomTile.y;
+              }
+            }
+          }
+          return {
+            ...entity,
+            x: nextX,
+            y: nextY,
+            ticksSinceMove: finalTicksSinceMove,
+            speedTicks,
+            behaviorState: nextState
+          };
+        });
+        setEntities(updatedEntities);
+        entitiesRef.current = updatedEntities;
+
+        // Schedule next standby tick
+        let yieldSpeedOffset = 0;
+        if (coinYield === 'SAFE') yieldSpeedOffset = 30;
+        else if (coinYield === 'HIGH_STAKES') yieldSpeedOffset = -25;
+        let finalSpeedMs = Math.max(35, Math.min(250, difficultyConfig.speedMs + adaptiveSpeedOffsetMs + yieldSpeedOffset));
+        timeoutId = setTimeout(moveSnake, finalSpeedMs);
+        return;
+      }
 
       const currentDir = nextDirectionRef.current;
       setDirection(currentDir);
@@ -1229,6 +1318,10 @@ export function useSnakeEngine({
     peers,
     connectionState,
     latency,
+
+    // Expose resting state
+    isResting,
+    setIsResting,
   };
 }
 
