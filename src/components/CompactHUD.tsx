@@ -9,6 +9,12 @@ interface CompactHUDProps {
   rivals?: any[];
   rivalCpuLabel?: string;
   biome?: string;
+
+  // Edge Multiplayer Props
+  peers?: any[];
+  connectionState?: 'CONNECTING' | 'CONNECTED' | 'FALLBACK_SIMULATION';
+  latency?: number;
+  status?: string;
 }
 
 export default function CompactHUD({
@@ -20,6 +26,10 @@ export default function CompactHUD({
   rivals = [],
   rivalCpuLabel = '',
   biome = 'GLITCH_VOID',
+  peers = [],
+  connectionState = 'CONNECTING',
+  latency = 35,
+  status = 'MENU',
 }: CompactHUDProps) {
   // Determine tension bar color and label based on active dread levels
   const getTensionStyle = () => {
@@ -32,8 +42,18 @@ export default function CompactHUD({
   const { color, label } = getTensionStyle();
   const percentage = Math.round(tension * 100);
 
+  // Dynamic sorted Scoreboard
+  const scoreboard = [
+    { name: 'iamtakeo (YOU)', score: score, color: themeColors.snakeHead },
+    ...peers.filter(p => p.alive).map(p => ({
+      name: p.name,
+      score: p.score,
+      color: p.color
+    }))
+  ].sort((a, b) => b.score - a.score);
+
   return (
-    <div className="w-full mb-3 px-1 flex flex-col gap-2 font-mono uppercase text-xs leading-none">
+    <div className="w-full mb-3 px-1 flex flex-col gap-2 font-mono uppercase text-xs leading-none select-none">
       <div className={`w-full flex items-center justify-between ${themeColors.textPrimary}`}>
         <div className="flex flex-col">
           <span className="opacity-50 text-[9px] tracking-widest">SCORE</span>
@@ -88,6 +108,30 @@ export default function CompactHUD({
           )}
         </div>
       </div>
+
+      {/* Dynamic Edge Multiplayer Lobby Teleboard */}
+      {status !== 'MENU' && (connectionState === 'CONNECTED' || connectionState === 'FALLBACK_SIMULATION') && (
+        <div className={`w-full flex flex-col gap-1.5 bg-black/40 border border-current border-opacity-15 p-1.5 rounded-sm ${themeColors.textPrimary}`}>
+          <div className="w-full flex items-center justify-between text-[7px] opacity-70 tracking-widest font-black">
+            <span>MULTIPLAYER CHANNELS</span>
+            <span className="text-green-400 animate-pulse">
+              {connectionState === 'FALLBACK_SIMULATION' ? 'P2P SIMULATION' : 'PARTYKIT LOBBY'} [{latency}ms]
+            </span>
+          </div>
+
+          <div className="w-full grid grid-cols-2 gap-1.5 mt-0.5 border-t border-dashed border-current border-opacity-10 pt-1.5">
+            {scoreboard.slice(0, 4).map((p, idx) => (
+              <div key={p.name} className="flex items-center justify-between gap-1 text-[8px] tracking-tight bg-neutral-900/40 px-1 py-0.5 rounded-sm border border-current border-opacity-5">
+                <span className="flex items-center gap-1 font-black truncate">
+                  <span className="w-1 h-1 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
+                  {idx + 1}. {p.name}
+                </span>
+                <span className="font-extrabold text-yellow-400 shrink-0">{p.score}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

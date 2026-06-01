@@ -42,6 +42,9 @@ interface RetroGridProps {
 
   // AI Prey Ecosystem Entities
   entities?: AIEntity[];
+
+  // Edge Multiplayer Peers
+  peers?: any[];
 }
 
 export default function RetroGrid({
@@ -71,6 +74,7 @@ export default function RetroGrid({
   breachActive = false,
   hasEscapedCabinet = false,
   entities = [],
+  peers = [],
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -121,6 +125,7 @@ export default function RetroGrid({
     breachActive,
     hasEscapedCabinet,
     entities,
+    peers,
   });
 
   // Previous status monitors to dynamically spawn beautiful juices
@@ -160,8 +165,9 @@ export default function RetroGrid({
       breachActive,
       hasEscapedCabinet,
       entities,
+      peers,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -1241,6 +1247,74 @@ export default function RetroGrid({
           ctx.fill();
 
           ctx.restore();
+        });
+      }
+
+      // 6.35. Draw Edge P2P Active Peer Serpents
+      if (state.peers && state.peers.length > 0) {
+        state.peers.forEach((peer) => {
+          if (!peer.alive) return;
+          
+          peer.body.forEach((seg, index) => {
+            const isPeerHead = index === 0;
+            const x = seg.x * cellSize;
+            const y = seg.y * cellSize;
+
+            ctx.save();
+            ctx.fillStyle = isPeerHead ? peer.color : 'rgba(255, 255, 255, 0.16)';
+            ctx.strokeStyle = peer.color;
+            ctx.lineWidth = 1;
+
+            ctx.beginPath();
+            ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize / 2 - 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Inner core glow highlights
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 0.22;
+            ctx.beginPath();
+            ctx.arc(x + cellSize / 2 - 1, y + cellSize / 2 - 1, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            if (isPeerHead) {
+              ctx.save();
+              
+              // Floating name tag
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+              ctx.font = "bold 7px 'Courier New', Courier, monospace";
+              ctx.textAlign = 'center';
+              ctx.fillText(peer.name, x + cellSize / 2, y - 4);
+
+              // Vector floating chat bubble with emoji
+              if (peer.emoji) {
+                ctx.fillStyle = 'rgba(10, 10, 10, 0.85)';
+                ctx.strokeStyle = peer.color;
+                ctx.lineWidth = 1;
+
+                // Rounded chat rectangle
+                ctx.beginPath();
+                ctx.roundRect(x + cellSize / 2 - 8, y - 20, 16, 11, 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Speech pointer bubble tail
+                ctx.beginPath();
+                ctx.moveTo(x + cellSize / 2 - 2, y - 9);
+                ctx.lineTo(x + cellSize / 2, y - 7);
+                ctx.lineTo(x + cellSize / 2 + 2, y - 9);
+                ctx.fill();
+
+                // Centered emoji
+                ctx.font = '8px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(peer.emoji, x + cellSize / 2, y - 14);
+              }
+              ctx.restore();
+            }
+          });
         });
       }
 

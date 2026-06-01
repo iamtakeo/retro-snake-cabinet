@@ -86,6 +86,9 @@ function AppContent() {
     breachActive,
     hasEscapedCabinet,
     entities,
+    peers,
+    connectionState,
+    latency,
   } = useSnakeEngine({
     difficulty,
     themeLocked,
@@ -426,6 +429,10 @@ function AppContent() {
                   rivals={rivals}
                   rivalCpuLabel={rivalCpuLabel}
                   biome={biome}
+                  peers={peers}
+                  connectionState={connectionState}
+                  latency={latency}
+                  status={status}
                 />
 
                 <RetroGrid
@@ -455,6 +462,7 @@ function AppContent() {
                   breachActive={breachActive}
                   hasEscapedCabinet={hasEscapedCabinet}
                   entities={entities}
+                  peers={peers}
                 />
 
                 {touchControlsPreference === 'ON' && (

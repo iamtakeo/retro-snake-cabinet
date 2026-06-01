@@ -79,6 +79,7 @@ import { ArenaType, generateObstaclesForArena } from '../utils/arenaManager';
 import { TerrainDecoration, generateTerrainDecorations } from '../utils/terrainManager';
 import { sfx } from '../utils/audio';
 import { generateChunkContent, ChunkContent, getBiomeForChunk } from '../utils/chunkManager';
+import { usePartyKit } from './usePartyKit';
 import {
   RivalSerpent,
   evaluateTension,
@@ -159,6 +160,15 @@ export function useSnakeEngine({
   // AI Prey Ecosystem Entities
   const [entities, setEntities] = useState<AIEntity[]>([]);
   const entitiesRef = useRef<AIEntity[]>([]);
+
+  // Edge Multiplayer PartyKit State Hook
+  const {
+    peers,
+    connectionState,
+    latency,
+    updateSimulatedPeers,
+    killPeer
+  } = usePartyKit(hasEscapedCabinet, status);
 
   // Open World Procedural Chunk System Cache & Refs
   const loadedChunksRef = useRef<Map<string, ChunkContent>>(new Map());
@@ -750,6 +760,17 @@ export function useSnakeEngine({
         return;
       }
 
+      // 4.5. Check player collision into active peer player tails (Edge blockades)
+      const playerHitsPeer = peers.some(
+        (p) => p.alive && p.body.some((seg) => seg.x === newHead.x && seg.y === newHead.y)
+      );
+      if (playerHitsPeer) {
+        sfx.playObstacleHit();
+        sfx.playGameOver();
+        setStatus('GAMEOVER');
+        return;
+      }
+
       // Proximity Bullet-Time trigger slowdown calculation
       let bulletTimeActive = false;
       if (bulletTime === 'ON') {
@@ -908,6 +929,30 @@ export function useSnakeEngine({
       }
 
       const nextSnake = [newHead, ...snakeRef.current];
+
+      // 3.5. Update Edge P2P Simulated active peers
+      updateSimulatedPeers(nextSnake, obstaclesRef.current, foodRef.current, currentGridSizeRef.current, () => {
+        sfx.playEat();
+        const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
+        setFood(nextFood);
+        foodRef.current = nextFood;
+      });
+
+      // Check peer head collision into player's body/tail segments (player cuts them off!)
+      peers.forEach((peer) => {
+        if (!peer.alive) return;
+        const pHead = peer.body[0];
+        if (pHead && nextSnake.some((seg, idx) => idx !== 0 && seg.x === pHead.x && seg.y === pHead.y)) {
+          killPeer(peer.id);
+          sfx.playEat();
+          const bonusCoins = 15;
+          setCoinsEarnedThisRun((prev) => prev + bonusCoins);
+          setCustomization((prev) => ({
+            ...prev,
+            coins: prev.coins + bonusCoins,
+          }));
+        }
+      });
 
       // Calculate score & coin yield calibrations multipliers
       let scoreYieldMultiplier = 1.0;
@@ -1194,6 +1239,11 @@ export function useSnakeEngine({
 
     // Expose entities to props
     entities,
+
+    // Expose multiplayer states to HUD and components
+    peers,
+    connectionState,
+    latency,
   };
 }
 
