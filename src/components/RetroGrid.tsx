@@ -287,9 +287,10 @@ export default function RetroGrid({
     const cellSize = canvasSize / VIEWPORT_CELLS;
 
     if (breachActive) {
-      engine.triggerShake(16);
-      engine.triggerFlash('rgba(244, 63, 94, 0.22)', 0.75, 0.025);
-      engine.spawnFloatingText(12, 12, cellSize, 'SYSTEM BREACH DETECTED! ⚡', '#f43f5e');
+      engine.triggerShake(24);
+      engine.triggerFlash('rgba(244, 63, 94, 0.3)', 0.8, 0.02);
+      engine.spawnFloatingText(12, 8, cellSize, '🚨 SYSTEM BREACH DETECTED! 🚨', '#f43f5e');
+      engine.spawnFloatingText(12, 12, cellSize, '➡️ ESCAPE RIGHT PORTAL NOW! ➡️', '#fbbf24');
     }
   }, [breachActive]);
 
@@ -880,29 +881,70 @@ export default function RetroGrid({
         ctx.lineTo(mapWidth, mapWidth);
         ctx.stroke();
 
-        // Right boundary line (with dynamic breach portal gap at y = 12 * cellSize)
+        // Right boundary line (with dynamic breach portal gap at y = 10..14 * cellSize)
         ctx.beginPath();
         ctx.moveTo(mapWidth, 0);
         if (state.breachActive) {
           // Draw down to the gap
-          ctx.lineTo(mapWidth, 12 * cellSize);
+          ctx.lineTo(mapWidth, 10 * cellSize);
           ctx.stroke();
 
           // Draw from below the gap down to the bottom
           ctx.beginPath();
-          ctx.moveTo(mapWidth, 13 * cellSize);
+          ctx.moveTo(mapWidth, 15 * cellSize);
           ctx.lineTo(mapWidth, mapWidth);
           ctx.stroke();
 
-          // Draw visual glitching portal dashed line inside the gap
+          // Draw visually stunning, massive glowing glitching portal in the 5-cell gap
           ctx.save();
-          ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(6, 182, 212, 0.7)' : 'rgba(244, 63, 94, 0.7)';
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([2, 2]);
+          
+          // Outer neon portal glow
+          ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(236, 72, 153, 0.85)' : 'rgba(34, 197, 94, 0.85)';
+          ctx.fillStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(236, 72, 153, 0.12)' : 'rgba(34, 197, 94, 0.12)';
+          ctx.lineWidth = 4;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = ctx.strokeStyle;
+          
+          // Draw a pulsing portal gateway arch extending slightly outwards to show it is a portal!
           ctx.beginPath();
-          ctx.moveTo(mapWidth, 12 * cellSize);
-          ctx.lineTo(mapWidth, 13 * cellSize);
+          ctx.moveTo(mapWidth, 10 * cellSize);
+          ctx.bezierCurveTo(mapWidth + 24, 10 * cellSize, mapWidth + 24, 15 * cellSize, mapWidth, 15 * cellSize);
           ctx.stroke();
+          ctx.fill();
+          
+          // Draw animated flowing navigation chevrons inside the portal (>>>)
+          ctx.shadowBlur = 0; // reset shadow for chevrons
+          ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? '#06b6d4' : '#fbbf24'; // Cyan/Amber chevrons
+          ctx.lineWidth = 2.5;
+          
+          const timeOffset = (Date.now() / 8) % 40;
+          for (let yOffset = 10.5; yOffset < 15; yOffset += 1.2) {
+            ctx.save();
+            ctx.translate(mapWidth + 8, yOffset * cellSize);
+            // Flowing chevrons moving right
+            const alpha = 0.45 + Math.sin((Date.now() / 150) + yOffset) * 0.4;
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.moveTo(-4, -6);
+            ctx.lineTo(4, 0);
+            ctx.lineTo(-4, 6);
+            ctx.stroke();
+            ctx.restore();
+          }
+          
+          // Draw a pulsing text inside the portal "ESCAPE!"
+          ctx.fillStyle = '#ffffff';
+          ctx.font = "bold 9px 'Courier New', Courier, monospace";
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 100) * 0.4;
+          
+          ctx.save();
+          ctx.translate(mapWidth + 14, 12.5 * cellSize);
+          ctx.rotate(Math.PI / 2); // vertical text slithering down
+          ctx.fillText('ESCAPE 🌌', 0, 0);
+          ctx.restore();
+          
           ctx.restore();
         } else {
           // Draw solid wall

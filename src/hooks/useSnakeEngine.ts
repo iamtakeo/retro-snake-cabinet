@@ -956,8 +956,8 @@ export function useSnakeEngine({
       // Unified dynamic boundaries limit based on escape status
       const maxGridLimit = hasEscapedCabinetRef.current ? 100 : 25;
       
-      // Allow escape through right wall breach coordinate (x=24, y=12)
-      const movingThroughBreach = breachActiveRef.current && head.x === 24 && head.y === 12 && currentDir === 'RIGHT';
+      // Allow escape through right wall breach coordinates (x=24, y=10..14)
+      const movingThroughBreach = breachActiveRef.current && head.x === 24 && (head.y >= 10 && head.y <= 14) && currentDir === 'RIGHT';
 
       let outOfBounds = false;
       if (movingThroughBreach) {
