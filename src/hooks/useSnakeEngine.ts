@@ -836,6 +836,19 @@ export function useSnakeEngine({
               let chunk = loadedChunksRef.current.get(key);
               if (!chunk) {
                 chunk = generateChunkContent(ncx, ncy);
+                // Safe-spawning guard: filter out obstacles that overlap with player, rivals, or peers
+                chunk.obstacles = chunk.obstacles.filter(obs => {
+                  const coordKey = `${obs.x},${obs.y}`;
+                  if (snakeSet.has(coordKey)) return false;
+                  
+                  const hitsRival = rivalsRef.current.some(r => r.alive && r.body.some(seg => seg.x === obs.x && seg.y === obs.y));
+                  if (hitsRival) return false;
+                  
+                  const hitsPeer = peers.some(p => p.alive && p.body.some(seg => seg.x === obs.x && seg.y === obs.y));
+                  if (hitsPeer) return false;
+                  
+                  return true;
+                });
                 loadedChunksRef.current.set(key, chunk);
               }
 

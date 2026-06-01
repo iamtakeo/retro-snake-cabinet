@@ -848,58 +848,86 @@ export default function RetroGrid({
         }
       }
 
-      // Draw physical map boundaries (with a dynamic breach gap at coordinate x=24, y=12)
-      ctx.strokeStyle = state.themeColors.snakeHead;
-      ctx.lineWidth = 3;
-      
-      const mapWidth = 25 * cellSize;
-      
-      // Top boundary line
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(mapWidth, 0);
-      ctx.stroke();
-
-      // Left boundary line
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, mapWidth);
-      ctx.stroke();
-
-      // Bottom boundary line
-      ctx.beginPath();
-      ctx.moveTo(0, mapWidth);
-      ctx.lineTo(mapWidth, mapWidth);
-      ctx.stroke();
-
-      // Right boundary line (with dynamic breach portal gap at y = 12 * cellSize)
-      ctx.beginPath();
-      ctx.moveTo(mapWidth, 0);
-      if (state.breachActive) {
-        // Draw down to the gap
-        ctx.lineTo(mapWidth, 12 * cellSize);
-        ctx.stroke();
-
-        // Draw from below the gap down to the bottom
-        ctx.beginPath();
-        ctx.moveTo(mapWidth, 13 * cellSize);
-        ctx.lineTo(mapWidth, mapWidth);
-        ctx.stroke();
-
-        // Draw visual glitching portal dashed line inside the gap
+      // Draw cabinet boundaries (only for 25x25 cabinet or when escaped the cabinet into the open world)
+      if (state.gridSize === 25 || state.gridSize === 100) {
         ctx.save();
-        ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(6, 182, 212, 0.7)' : 'rgba(244, 63, 94, 0.7)';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = state.themeColors.snakeHead;
+        ctx.lineWidth = 3;
+        
+        const mapWidth = 25 * cellSize;
+        
+        // Top boundary line
         ctx.beginPath();
-        ctx.moveTo(mapWidth, 12 * cellSize);
-        ctx.lineTo(mapWidth, 13 * cellSize);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(mapWidth, 0);
         ctx.stroke();
-        ctx.restore();
-      } else {
-        // Draw solid wall
+
+        // Left boundary line
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, mapWidth);
+        ctx.stroke();
+
+        // Bottom boundary line
+        ctx.beginPath();
+        ctx.moveTo(0, mapWidth);
         ctx.lineTo(mapWidth, mapWidth);
         ctx.stroke();
+
+        // Right boundary line (with dynamic breach portal gap at y = 12 * cellSize)
+        ctx.beginPath();
+        ctx.moveTo(mapWidth, 0);
+        if (state.breachActive) {
+          // Draw down to the gap
+          ctx.lineTo(mapWidth, 12 * cellSize);
+          ctx.stroke();
+
+          // Draw from below the gap down to the bottom
+          ctx.beginPath();
+          ctx.moveTo(mapWidth, 13 * cellSize);
+          ctx.lineTo(mapWidth, mapWidth);
+          ctx.stroke();
+
+          // Draw visual glitching portal dashed line inside the gap
+          ctx.save();
+          ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(6, 182, 212, 0.7)' : 'rgba(244, 63, 94, 0.7)';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(mapWidth, 12 * cellSize);
+          ctx.lineTo(mapWidth, 13 * cellSize);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          // Draw solid wall
+          ctx.lineTo(mapWidth, mapWidth);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Draw premium outer map boundaries for Large Expansion (50x50) or Open World (100x100)
+      if (state.gridSize === 50 || state.gridSize === 100) {
+        ctx.save();
+        
+        // Glow aesthetics
+        ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? '#ec4899' : state.themeColors.snakeHead;
+        ctx.lineWidth = 4;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = ctx.strokeStyle;
+        
+        const outerWidth = state.gridSize * cellSize;
+        ctx.beginPath();
+        ctx.strokeRect(0, 0, outerWidth, outerWidth);
+        
+        // Add double thin inner border line for high-end phosphor feel
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = 0.55;
+        ctx.strokeRect(2, 2, outerWidth - 4, outerWidth - 4);
+        
+        ctx.restore();
       }
 
       // 3. Draw Level Obstacles
