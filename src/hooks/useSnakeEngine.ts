@@ -78,6 +78,7 @@ function spawnAdditionalMice(currentSnake: Position[], currentObstacles: Positio
 import { ArenaType, generateObstaclesForArena } from '../utils/arenaManager';
 import { TerrainDecoration, generateTerrainDecorations } from '../utils/terrainManager';
 import { sfx } from '../utils/audio';
+import { generateChunkContent, ChunkContent, getBiomeForChunk } from '../utils/chunkManager';
 import {
   RivalSerpent,
   evaluateTension,
@@ -158,6 +159,12 @@ export function useSnakeEngine({
   // AI Prey Ecosystem Entities
   const [entities, setEntities] = useState<AIEntity[]>([]);
   const entitiesRef = useRef<AIEntity[]>([]);
+
+  // Open World Procedural Chunk System Cache & Refs
+  const loadedChunksRef = useRef<Map<string, ChunkContent>>(new Map());
+  const currentChunkRef = useRef<{ cx: number; cy: number }>({ cx: -999, cy: -999 });
+  const initialObstaclesRef = useRef<Position[]>([]);
+  const initialDecorationsRef = useRef<TerrainDecoration[]>([]);
 
   // Track state in mutable refs for the optimized game loop
   const snakeRef = useRef<Position[]>([]);
@@ -337,6 +344,12 @@ export function useSnakeEngine({
     // Procedural Ground Textures Seeding
     const initialTerrain = generateTerrainDecorations(calculatedGridSize, initialObstacles, chosenArena);
     setTerrainDecorations(initialTerrain);
+
+    // Reset open world procedural chunk cache
+    loadedChunksRef.current.clear();
+    currentChunkRef.current = { cx: -999, cy: -999 };
+    initialObstaclesRef.current = initialObstacles;
+    initialDecorationsRef.current = initialTerrain;
 
     const initialFood = generateRandomCell(initialSnake, initialObstacles, calculatedGridSize);
 
@@ -789,6 +802,46 @@ export function useSnakeEngine({
         const nextF = generateRandomCell(snakeRef.current, obstaclesRef.current, currentGridSizeRef.current);
         setFood(nextF);
         foodRef.current = nextF;
+      }
+
+      // 5. Open World Procedural Chunk Loading
+      if (hasEscapedCabinetRef.current) {
+        const cx = Math.floor(newHead.x / 20);
+        const cy = Math.floor(newHead.y / 20);
+
+        if (currentChunkRef.current.cx !== cx || currentChunkRef.current.cy !== cy) {
+          currentChunkRef.current = { cx, cy };
+
+          // Dynamically set the active biome based on the current head chunk
+          const currentBiome = getBiomeForChunk(cx, cy);
+          setBiome(currentBiome);
+
+          // Load 3x3 active grid of chunks
+          const compiledObstacles = [...initialObstaclesRef.current];
+          const compiledDecorations = [...initialDecorationsRef.current];
+
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const ncx = cx + dx;
+              const ncy = cy + dy;
+              const key = `${ncx}_${ncy}`;
+
+              let chunk = loadedChunksRef.current.get(key);
+              if (!chunk) {
+                chunk = generateChunkContent(ncx, ncy);
+                loadedChunksRef.current.set(key, chunk);
+              }
+
+              compiledObstacles.push(...chunk.obstacles);
+              compiledDecorations.push(...chunk.decorations);
+            }
+          }
+
+          setObstacles(compiledObstacles);
+          obstaclesRef.current = compiledObstacles;
+
+          setTerrainDecorations(compiledDecorations);
+        }
       }
 
       // Unified dynamic boundaries limit based on escape status
