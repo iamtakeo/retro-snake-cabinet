@@ -86,6 +86,8 @@ export function generateChunkContent(cx: number, cy: number): ChunkContent {
   else if (biome === 'SAND_RUINS') obstacleCount = 4;
   else if (biome === 'GLITCH_VOID') obstacleCount = 1;
 
+  const isEscCorridor = (x: number, y: number) => x >= 24 && x <= 33 && y >= 10 && y <= 14;
+
   for (let i = 0; i < obstacleCount; i++) {
     // Keep margins to avoid blocking boundaries tightly
     const rx = rng.intRange(2, 18);
@@ -93,14 +95,14 @@ export function generateChunkContent(cx: number, cy: number): ChunkContent {
     const absX = startX + rx;
     const absY = startY + ry;
 
-    if (!isInsideCabinet(absX, absY)) {
+    if (!isInsideCabinet(absX, absY) && !isEscCorridor(absX, absY)) {
       obstacles.push({ x: absX, y: absY });
       
       // Sometimes spawn double block pillars
       if (rng.next() < 0.4) {
         const nextX = absX + (rng.next() < 0.5 ? 1 : 0);
         const nextY = absY + (rng.next() < 0.5 ? 0 : 1);
-        if (!isInsideCabinet(nextX, nextY) && nextX < startX + 19 && nextY < startY + 19) {
+        if (!isInsideCabinet(nextX, nextY) && !isEscCorridor(nextX, nextY) && nextX < startX + 19 && nextY < startY + 19) {
           obstacles.push({ x: nextX, y: nextY });
         }
       }
