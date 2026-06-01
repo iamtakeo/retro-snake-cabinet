@@ -35,6 +35,10 @@ interface RetroGridProps {
   rivals?: RivalSerpent[];
   tension?: number;
   biome?: string;
+
+  // Open World cabinet escape props
+  breachActive?: boolean;
+  hasEscapedCabinet?: boolean;
 }
 
 export default function RetroGrid({
@@ -61,6 +65,8 @@ export default function RetroGrid({
   rivals = [],
   tension = 0.0,
   biome = 'GLITCH_VOID',
+  breachActive = false,
+  hasEscapedCabinet = false,
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -108,6 +114,8 @@ export default function RetroGrid({
     rivals,
     tension,
     biome,
+    breachActive,
+    hasEscapedCabinet,
   });
 
   // Previous status monitors to dynamically spawn beautiful juices
@@ -143,8 +151,10 @@ export default function RetroGrid({
       rivals,
       tension,
       biome,
+      breachActive,
+      hasEscapedCabinet,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -234,6 +244,39 @@ export default function RetroGrid({
     prevStatusRef.current = gameStatus;
   }, [score, food, goldenFood, gameStatus, gridSize, snake, themeColors.food]);
 
+  // Trigger Open World breach and escape visual effects
+  useEffect(() => {
+    const engine = effectsEngineRef.current;
+    if (!engine) return;
+
+    const canvasSize = 600;
+    const VIEWPORT_CELLS = 25;
+    const cellSize = canvasSize / VIEWPORT_CELLS;
+
+    if (breachActive) {
+      engine.triggerShake(16);
+      engine.triggerFlash('rgba(244, 63, 94, 0.22)', 0.75, 0.025);
+      engine.spawnFloatingText(12, 12, cellSize, 'SYSTEM BREACH DETECTED! ⚡', '#f43f5e');
+    }
+  }, [breachActive]);
+
+  useEffect(() => {
+    const engine = effectsEngineRef.current;
+    if (!engine) return;
+
+    const canvasSize = 600;
+    const VIEWPORT_CELLS = 25;
+    const cellSize = canvasSize / VIEWPORT_CELLS;
+
+    if (hasEscapedCabinet) {
+      engine.triggerShake(22);
+      engine.triggerFlash('rgba(6, 182, 212, 0.25)', 0.85, 0.02);
+      engine.spawnFloatingText(12, 12, cellSize, 'CABINET ESCAPED! 🌌', '#06b6d4');
+      // Spawn burst of cyan sparks from the center!
+      engine.spawnBurst(12, 12, cellSize, '#06b6d4', 28);
+    }
+  }, [hasEscapedCabinet]);
+
   // Trigger tactile CRT overlay notifications on dynamic wind cycles
   useEffect(() => {
     const engine = effectsEngineRef.current;
@@ -295,21 +338,33 @@ export default function RetroGrid({
 
       // Calculate sliding camera center on the snake head
       const head = state.snake[0] || { x: 12, y: 12 };
-      const targetCameraX = head.x - Math.floor(VIEWPORT_CELLS / 2);
-      const targetCameraY = head.y - Math.floor(VIEWPORT_CELLS / 2);
+      
+      let cameraCellX = 0;
+      let cameraCellY = 0;
 
-      // Snap camera instantly on first load to prevent long scroll from (12,12)
-      if (cameraRef.current.x === 12 && cameraRef.current.y === 12 && head.x !== 12) {
-        cameraRef.current.x = targetCameraX;
-        cameraRef.current.y = targetCameraY;
+      if (state.hasEscapedCabinet) {
+        const targetCameraX = head.x - Math.floor(VIEWPORT_CELLS / 2);
+        const targetCameraY = head.y - Math.floor(VIEWPORT_CELLS / 2);
+
+        // Snap camera instantly on the very first frame after escaping to prevent long scroll lag
+        if (cameraRef.current.x === 0 && cameraRef.current.y === 0) {
+          cameraRef.current.x = targetCameraX;
+          cameraRef.current.y = targetCameraY;
+        }
+
+        // Smoothly LERP camera position towards the head centered target
+        cameraRef.current.x += (targetCameraX - cameraRef.current.x) * 0.12;
+        cameraRef.current.y += (targetCameraY - cameraRef.current.y) * 0.12;
+
+        cameraCellX = cameraRef.current.x;
+        cameraCellY = cameraRef.current.y;
+      } else {
+        // Lock camera centered inside cabinet box
+        cameraRef.current.x = 0;
+        cameraRef.current.y = 0;
+        cameraCellX = 0;
+        cameraCellY = 0;
       }
-
-      // Smoothly LERP camera position towards the head centered target
-      cameraRef.current.x += (targetCameraX - cameraRef.current.x) * 0.12;
-      cameraRef.current.y += (targetCameraY - cameraRef.current.y) * 0.12;
-
-      const cameraCellX = cameraRef.current.x;
-      const cameraCellY = cameraRef.current.y;
 
       // 1. Clear with matrix grid background
       ctx.fillStyle = state.themeColors.gridBackground;
@@ -766,10 +821,59 @@ export default function RetroGrid({
         }
       }
 
-      // Draw physical map boundaries
+      // Draw physical map boundaries (with a dynamic breach gap at coordinate x=24, y=12)
       ctx.strokeStyle = state.themeColors.snakeHead;
       ctx.lineWidth = 3;
-      ctx.strokeRect(0, 0, state.gridSize * cellSize, state.gridSize * cellSize);
+      
+      const mapWidth = 25 * cellSize;
+      
+      // Top boundary line
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(mapWidth, 0);
+      ctx.stroke();
+
+      // Left boundary line
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, mapWidth);
+      ctx.stroke();
+
+      // Bottom boundary line
+      ctx.beginPath();
+      ctx.moveTo(0, mapWidth);
+      ctx.lineTo(mapWidth, mapWidth);
+      ctx.stroke();
+
+      // Right boundary line (with dynamic breach portal gap at y = 12 * cellSize)
+      ctx.beginPath();
+      ctx.moveTo(mapWidth, 0);
+      if (state.breachActive) {
+        // Draw down to the gap
+        ctx.lineTo(mapWidth, 12 * cellSize);
+        ctx.stroke();
+
+        // Draw from below the gap down to the bottom
+        ctx.beginPath();
+        ctx.moveTo(mapWidth, 13 * cellSize);
+        ctx.lineTo(mapWidth, mapWidth);
+        ctx.stroke();
+
+        // Draw visual glitching portal dashed line inside the gap
+        ctx.save();
+        ctx.strokeStyle = state.themeKey === 'CYBERPUNK' ? 'rgba(6, 182, 212, 0.7)' : 'rgba(244, 63, 94, 0.7)';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(mapWidth, 12 * cellSize);
+        ctx.lineTo(mapWidth, 13 * cellSize);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        // Draw solid wall
+        ctx.lineTo(mapWidth, mapWidth);
+        ctx.stroke();
+      }
 
       // 3. Draw Level Obstacles
       ctx.fillStyle = state.themeColors.obstacle;

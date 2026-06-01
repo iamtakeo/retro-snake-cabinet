@@ -83,6 +83,12 @@ export function useSnakeEngine({
   const [rivals, setRivals] = useState<RivalSerpent[]>([]);
   const [biome, setBiome] = useState<'NEON_GRID' | 'SAND_RUINS' | 'TOXIC_WASTE' | 'GLITCH_VOID'>('GLITCH_VOID');
 
+  // Open World cabinet escape states & refs
+  const [breachActive, setBreachActive] = useState<boolean>(false);
+  const [hasEscapedCabinet, setHasEscapedCabinet] = useState<boolean>(false);
+  const breachActiveRef = useRef<boolean>(false);
+  const hasEscapedCabinetRef = useRef<boolean>(false);
+
   // Track state in mutable refs for the optimized game loop
   const snakeRef = useRef<Position[]>([]);
   const directionRef = useRef<Direction>('UP');
@@ -120,7 +126,9 @@ export function useSnakeEngine({
     statusRef.current = status;
     currentGridSizeRef.current = currentGridSize;
     rivalsRef.current = rivals;
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals]);
+    breachActiveRef.current = breachActive;
+    hasEscapedCabinetRef.current = hasEscapedCabinet;
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet]);
 
   // Track Game Time Survival
   useEffect(() => {
@@ -167,6 +175,12 @@ export function useSnakeEngine({
   // Initialise/Start game run
   const startGame = useCallback(() => {
     sfx.playPowerUp();
+
+    // Reset open world escape variables
+    setBreachActive(false);
+    breachActiveRef.current = false;
+    setHasEscapedCabinet(false);
+    hasEscapedCabinetRef.current = false;
 
     if (!themeLocked) {
       const themes: RetroTheme[] = ['GREEN_PHOSPHOR', 'AMBER_CRT', 'CLASSIC_LCD', 'CYBERPUNK', 'MONOCHROME_POCKET'];
@@ -666,13 +680,23 @@ export function useSnakeEngine({
         foodRef.current = nextF;
       }
 
-      const outOfBounds =
-        newHead.x < 0 || newHead.x >= currentGridSizeRef.current || newHead.y < 0 || newHead.y >= currentGridSizeRef.current;
+      // Unified dynamic boundaries limit based on escape status
+      const maxGridLimit = hasEscapedCabinetRef.current ? 100 : 25;
+      
+      // Allow escape through right wall breach coordinate (x=24, y=12)
+      const movingThroughBreach = breachActiveRef.current && head.x === 24 && head.y === 12 && currentDir === 'RIGHT';
+
+      let outOfBounds = false;
+      if (movingThroughBreach) {
+        outOfBounds = false;
+      } else {
+        outOfBounds = newHead.x < 0 || newHead.x >= maxGridLimit || newHead.y < 0 || newHead.y >= maxGridLimit;
+      }
 
       if (outOfBounds) {
-        if (difficultyConfig.canTeleport || coinYield === 'SAFE') {
-          newHead.x = (newHead.x + currentGridSizeRef.current) % currentGridSizeRef.current;
-          newHead.y = (newHead.y + currentGridSizeRef.current) % currentGridSizeRef.current;
+        if (hasEscapedCabinetRef.current && (difficultyConfig.canTeleport || coinYield === 'SAFE')) {
+          newHead.x = (newHead.x + maxGridLimit) % maxGridLimit;
+          newHead.y = (newHead.y + maxGridLimit) % maxGridLimit;
         } else {
           sfx.playObstacleHit();
           sfx.playGameOver();
@@ -754,6 +778,7 @@ export function useSnakeEngine({
         setApplesEaten((prev) => prev + 1);
         const addedScore = Math.round(10 * difficultyConfig.scoreMultiplier * scoreYieldMultiplier);
         setScore((prev) => prev + addedScore);
+        scoreRef.current += addedScore;
 
         const earnedCoinsNum = Math.max(1, Math.round(1 * difficultyConfig.scoreMultiplier * coinYieldMultiplier));
         setCoinsEarnedThisRun((prev) => prev + earnedCoinsNum);
@@ -776,6 +801,7 @@ export function useSnakeEngine({
         setGoldenApplesEaten((prev) => prev + 1);
         const addedScore = Math.round(50 * difficultyConfig.scoreMultiplier * scoreYieldMultiplier);
         setScore((prev) => prev + addedScore);
+        scoreRef.current += addedScore;
 
         const earnedCoinsNum = Math.max(5, Math.round(5 * difficultyConfig.scoreMultiplier * coinYieldMultiplier));
         setCoinsEarnedThisRun((prev) => prev + earnedCoinsNum);
@@ -814,6 +840,21 @@ export function useSnakeEngine({
 
       sfx.playMove();
       setSnake(nextSnake);
+
+      // Track Breach Event Score Threshold (score >= 30 opens the right wall gap at 24,12)
+      if (scoreRef.current >= 30 && !breachActiveRef.current) {
+        setBreachActive(true);
+        breachActiveRef.current = true;
+      }
+
+      // Track Escape state transition (snake head crosses x=25 through the breach)
+      if (newHead.x >= 25 && !hasEscapedCabinetRef.current) {
+        setHasEscapedCabinet(true);
+        hasEscapedCabinetRef.current = true;
+        setCurrentGridSize(100);
+        currentGridSizeRef.current = 100;
+        sfx.playPowerUp();
+      }
 
       // Safe vs High Stakes speed calibrations
       let yieldSpeedOffset = 0;
@@ -868,6 +909,10 @@ export function useSnakeEngine({
     rivalCpuLabel: evaluateRivalDifficulty(gameTicksRef.current, difficulty).cpuLabel,
     biome,            // active environmental biome sector
     terrainDecorations,
+
+    // Open world cabinet breach escape states
+    breachActive,
+    hasEscapedCabinet,
   };
 }
 

@@ -83,6 +83,8 @@ function AppContent() {
     rivalCpuLabel,
     biome,            // active environmental biome sector
     terrainDecorations,
+    breachActive,
+    hasEscapedCabinet,
   } = useSnakeEngine({
     difficulty,
     themeLocked,
@@ -449,6 +451,8 @@ function AppContent() {
                   tension={tension}             // Expose director tension telemetry!
                   biome={biome}                 // Expose active environmental biome sector!
                   terrainDecorations={terrainDecorations}
+                  breachActive={breachActive}
+                  hasEscapedCabinet={hasEscapedCabinet}
                 />
 
                 {touchControlsPreference === 'ON' && (
