@@ -422,6 +422,30 @@ export function useSnakeEngine({
       gameTicksRef.current += 1;
       timeSinceLastEatRef.current += 1;
 
+      // 0. Build Spatial Hash Sets for O(1) performance
+      const snakeSet = new Set<string>();
+      snakeRef.current.forEach(seg => snakeSet.add(`${seg.x},${seg.y}`));
+      const obstacleSet = new Set<string>();
+      obstaclesRef.current.forEach(obs => obstacleSet.add(`${obs.x},${obs.y}`));
+      const laserGateSet = new Set<string>();
+      laserGateObstaclesRef.current.forEach(g => laserGateSet.add(`${g.x},${g.y}`));
+
+      // 0.5 Pre-calculate Laser Gate State for this tick
+      let isGateActiveTick = false;
+      if (laserGates === 'ON') {
+        let activeTicks = 8;
+        let inactiveTicks = 8;
+        switch (difficulty) {
+          case 'PRACTICE': activeTicks = 4; inactiveTicks = 16; break;
+          case 'NORMAL': activeTicks = 8; inactiveTicks = 8; break;
+          case 'CHALLENGE': activeTicks = 12; inactiveTicks = 6; break;
+          case 'IMPOSSIBLE': activeTicks = 14; inactiveTicks = 4; break;
+        }
+        const cyclePeriod = activeTicks + inactiveTicks;
+        isGateActiveTick = (gameTicksRef.current % cyclePeriod) < activeTicks;
+      }
+      setLaserGatesActive(isGateActiveTick);
+
       // 1. Evaluate real-time dread/tension metric (L4D AI Director)
       const directorState = evaluateTension(
         snakeRef.current,
@@ -429,7 +453,9 @@ export function useSnakeEngine({
         currentGridSizeRef.current,
         scoreRef.current,
         timeSinceLastEatRef.current,
-        difficulty
+        difficulty,
+        obstacleSet,
+        snakeSet
       );
       setTension(directorState.tension);
 
@@ -451,7 +477,9 @@ export function useSnakeEngine({
             currentGridSizeRef.current,
             snakeRef.current,
             foodRef.current,
-            rivalsRef.current
+            rivalsRef.current,
+            laserGateSet,
+            snakeSet
           );
           setObstacles(morphed);
           sfx.playClick(); // faint alignment shift cue
@@ -472,8 +500,8 @@ export function useSnakeEngine({
               { x: rX, y: rY + 1 },
               { x: rX, y: rY + 2 }
             ];
-            const overlapsPlayer = tempBody.some(rSeg => snakeRef.current.some(pSeg => pSeg.x === rSeg.x && pSeg.y === rSeg.y));
-            const overlapsObstacle = tempBody.some(rSeg => obstaclesRef.current.some(obs => obs.x === rSeg.x && obs.y === rSeg.y));
+            const overlapsPlayer = tempBody.some(rSeg => snakeSet.has(`${rSeg.x},${rSeg.y}`));
+            const overlapsObstacle = tempBody.some(rSeg => obstacleSet.has(`${rSeg.x},${rSeg.y}`));
             
             if (!overlapsPlayer && !overlapsObstacle) {
               isSafe = true;
@@ -524,16 +552,17 @@ export function useSnakeEngine({
               snakeRef.current,
               obstaclesRef.current,
               laserGateObstaclesRef.current,
-              laserGatesActive,
+              isGateActiveTick,
               foodRef.current || { x: 12, y: 12 },
               currentGridSizeRef.current,
-              telemetry.errorRate
+              telemetry.errorRate,
+              obstacleSet,
+              laserGateSet,
+              snakeSet
             );
 
             // Check tail blockade collision success (player cuts off enemy!)
-            const blocked = snakeRef.current.some(
-              (seg, idx) => idx !== 0 && seg.x === nextHead.x && seg.y === nextHead.y
-            );
+            const blocked = snakeSet.has(`${nextHead.x},${nextHead.y}`) && !(snakeRef.current[0].x === nextHead.x && snakeRef.current[0].y === nextHead.y);
 
             if (blocked) {
               sfx.playEat();
@@ -549,7 +578,7 @@ export function useSnakeEngine({
 
             // Check standard crash bounds
             const outR = nextHead.x < 0 || nextHead.x >= currentGridSizeRef.current || nextHead.y < 0 || nextHead.y >= currentGridSizeRef.current;
-            const hitsObstacle = obstaclesRef.current.some(obs => obs.x === nextHead.x && obs.y === nextHead.y);
+            const hitsObstacle = obstacleSet.has(`${nextHead.x},${nextHead.y}`);
 
             if (outR || hitsObstacle) {
               return { ...rival, alive: false };
@@ -566,35 +595,7 @@ export function useSnakeEngine({
         rivalsRef.current = nextRivals;
       }
 
-      // Update Laser gates flash states scaling with difficulty
-      if (laserGates === 'ON') {
-        let activeTicks = 8;
-        let inactiveTicks = 8;
-        switch (difficulty) {
-          case 'PRACTICE':
-            activeTicks = 4;
-            inactiveTicks = 16;
-            break;
-          case 'NORMAL':
-            activeTicks = 8;
-            inactiveTicks = 8;
-            break;
-          case 'CHALLENGE':
-            activeTicks = 12;
-            inactiveTicks = 6;
-            break;
-          case 'IMPOSSIBLE':
-            activeTicks = 14;
-            inactiveTicks = 4;
-            break;
-        }
-        const cyclePeriod = activeTicks + inactiveTicks;
-        const cycleProgress = gameTicksRef.current % cyclePeriod;
-        const isGateActive = cycleProgress < activeTicks;
-        setLaserGatesActive(isGateActive);
-      } else {
-        setLaserGatesActive(false);
-      }
+      // (Laser gates flash states are now calculated once at the top of the tick loop)
 
       const currentDir = nextDirectionRef.current;
       setDirection(currentDir);
@@ -718,28 +719,15 @@ export function useSnakeEngine({
         }
 
         // Check crash after wind slide
-        const selfWind = snakeRef.current.some((seg, index) => index !== 0 && seg.x === newHead.x && seg.y === newHead.y);
-        const obsWind = obstaclesRef.current.some(obs => {
-          if (obs.x === newHead.x && obs.y === newHead.y) {
-            const isLaserGate = laserGateObstaclesRef.current.some(gate => gate.x === obs.x && gate.y === obs.y);
-            if (isLaserGate) {
-              // Keep gate check consistent with dynamic laser active status!
-              let activeTicks = 8;
-              let inactiveTicks = 8;
-              switch (difficulty) {
-                case 'PRACTICE': activeTicks = 4; inactiveTicks = 16; break;
-                case 'NORMAL': activeTicks = 8; inactiveTicks = 8; break;
-                case 'CHALLENGE': activeTicks = 12; inactiveTicks = 6; break;
-                case 'IMPOSSIBLE': activeTicks = 14; inactiveTicks = 4; break;
-              }
-              const cyclePeriod = activeTicks + inactiveTicks;
-              const cycleProgress = gameTicksRef.current % cyclePeriod;
-              return cycleProgress < activeTicks;
-            }
-            return true;
+        const selfWind = snakeSet.has(`${newHead.x},${newHead.y}`) && !(snakeRef.current[0].x === newHead.x && snakeRef.current[0].y === newHead.y);
+        let obsWind = false;
+        if (obstacleSet.has(`${newHead.x},${newHead.y}`)) {
+          if (laserGateSet.has(`${newHead.x},${newHead.y}`)) {
+            obsWind = isGateActiveTick;
+          } else {
+            obsWind = true;
           }
-          return false;
-        });
+        }
 
         if (selfWind || obsWind) {
           sfx.playObstacleHit();
@@ -783,17 +771,15 @@ export function useSnakeEngine({
         }
 
         const nextOutOfBounds = ahead.x < 0 || ahead.x >= currentGridSizeRef.current || ahead.y < 0 || ahead.y >= currentGridSizeRef.current;
-        const hitsSelf = snakeRef.current.some(seg => seg.x === ahead.x && seg.y === ahead.y);
-        const hitsObstacle = obstaclesRef.current.some(obs => {
-          if (obs.x === ahead.x && obs.y === ahead.y) {
-            const isLaserGate = laserGateObstaclesRef.current.some(gate => gate.x === obs.x && gate.y === obs.y);
-            if (isLaserGate) {
-              return Math.floor(gameTicksRef.current / 8) % 2 === 0;
-            }
-            return true;
+        const hitsSelf = snakeSet.has(`${ahead.x},${ahead.y}`);
+        let hitsObstacle = false;
+        if (obstacleSet.has(`${ahead.x},${ahead.y}`)) {
+          if (laserGateSet.has(`${ahead.x},${ahead.y}`)) {
+            hitsObstacle = isGateActiveTick;
+          } else {
+            hitsObstacle = true;
           }
-          return false;
-        });
+        }
 
         if ((nextOutOfBounds && !difficultyConfig.canTeleport && coinYield !== 'SAFE') || hitsSelf || hitsObstacle) {
           bulletTimeActive = true;
@@ -808,8 +794,8 @@ export function useSnakeEngine({
         const nextFY = foodRef.current.y + offset.y;
 
         const inFBounds = nextFX >= 1 && nextFX < currentGridSizeRef.current - 1 && nextFY >= 1 && nextFY < currentGridSizeRef.current - 1;
-        const hitsFSnake = snakeRef.current.some(seg => seg.x === nextFX && seg.y === nextFX);
-        const hitsFObstacle = obstaclesRef.current.some(obs => obs.x === nextFX && obs.y === nextFY);
+        const hitsFSnake = snakeSet.has(`${nextFX},${nextFY}`);
+        const hitsFObstacle = obstacleSet.has(`${nextFX},${nextFY}`);
 
         if (inFBounds && !hitsFSnake && !hitsFObstacle) {
           const newF = { x: nextFX, y: nextFY };
@@ -890,9 +876,7 @@ export function useSnakeEngine({
         }
       }
 
-      const selfCollide = snakeRef.current.some(
-        (seg, index) => index !== 0 && seg.x === newHead.x && seg.y === newHead.y
-      );
+      const selfCollide = snakeSet.has(`${newHead.x},${newHead.y}`) && !(snakeRef.current[0].x === newHead.x && snakeRef.current[0].y === newHead.y);
       if (selfCollide) {
         sfx.playObstacleHit();
         sfx.playGameOver();
@@ -900,26 +884,14 @@ export function useSnakeEngine({
         return;
       }
 
-      const obstacleCollide = obstaclesRef.current.some((obs) => {
-        if (obs.x === newHead.x && obs.y === newHead.y) {
-          const isLaserGate = laserGateObstaclesRef.current.some(gate => gate.x === obs.x && gate.y === obs.y);
-          if (isLaserGate) {
-            let activeTicks = 8;
-            let inactiveTicks = 8;
-            switch (difficulty) {
-              case 'PRACTICE': activeTicks = 4; inactiveTicks = 16; break;
-              case 'NORMAL': activeTicks = 8; inactiveTicks = 8; break;
-              case 'CHALLENGE': activeTicks = 12; inactiveTicks = 6; break;
-              case 'IMPOSSIBLE': activeTicks = 14; inactiveTicks = 4; break;
-            }
-            const cyclePeriod = activeTicks + inactiveTicks;
-            const cycleProgress = gameTicksRef.current % cyclePeriod;
-            return cycleProgress < activeTicks;
-          }
-          return true;
+      let obstacleCollide = false;
+      if (obstacleSet.has(`${newHead.x},${newHead.y}`)) {
+        if (laserGateSet.has(`${newHead.x},${newHead.y}`)) {
+          obstacleCollide = isGateActiveTick;
+        } else {
+          obstacleCollide = true;
         }
-        return false;
-      });
+      }
 
       if (obstacleCollide) {
         sfx.playObstacleHit();
@@ -1004,7 +976,7 @@ export function useSnakeEngine({
             if (tile.x < 0 || tile.x >= maxGridLimit || tile.y < 0 || tile.y >= maxGridLimit) {
               return false;
             }
-            if (obstaclesRef.current.some(obs => obs.x === tile.x && obs.y === tile.y)) {
+            if (obstacleSet.has(`${tile.x},${tile.y}`)) {
               return false;
             }
             if (nextSnake.some(seg => seg.x === tile.x && seg.y === tile.y)) {
