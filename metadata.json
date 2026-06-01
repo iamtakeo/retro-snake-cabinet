@@ -1,0 +1,6 @@
+{
+  "name": "Retro Snake",
+  "description": "A high-performance retro-themed Snake Game featuring modular layouts, persistent high scores, custom difficulties, and vintage audio effects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
