@@ -48,6 +48,9 @@ interface RetroGridProps {
 
   // Resting state
   isResting?: boolean;
+
+  // Immersive layout state
+  isImmersiveActive?: boolean;
 }
 
 export default function RetroGrid({
@@ -79,6 +82,7 @@ export default function RetroGrid({
   entities = [],
   peers = [],
   isResting = false,
+  isImmersiveActive = false,
 }: RetroGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -131,6 +135,7 @@ export default function RetroGrid({
     entities,
     peers,
     isResting,
+    isImmersiveActive,
   });
 
   // Previous status monitors to dynamically spawn beautiful juices
@@ -172,8 +177,9 @@ export default function RetroGrid({
       entities,
       peers,
       isResting,
+      isImmersiveActive,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers, isResting]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers, isResting, isImmersiveActive]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -1553,6 +1559,22 @@ export default function RetroGrid({
         ctx.restore();
       }
 
+      // 8.6. Draw immersive score overlay in top-right corner
+      if (state.isImmersiveActive) {
+        ctx.save();
+        ctx.fillStyle = state.themeKey === 'CYBERPUNK' ? '#ec4899' : state.themeColors.snakeHead;
+        ctx.font = "bold 13px 'Courier New', Courier, monospace";
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = ctx.fillStyle;
+        
+        const paddedScore = state.score.toLocaleString(undefined, { minimumIntegerDigits: 5, useGrouping: false });
+        ctx.fillText(`SCORE: ${paddedScore}`, canvasSize - 15, 15);
+        ctx.restore();
+      }
+
       // Tick continuous vector math triggers
       engine.update();
 
@@ -1567,13 +1589,15 @@ export default function RetroGrid({
     };
   }, []);
 
-  const sizeClass = touchControlsVisible
-    ? 'w-[min(90vw,calc(100vh-360px))] max-w-[650px]'
-    : 'w-[min(90vw,calc(100vh-180px))] max-w-[650px]';
+  const sizeClass = isImmersiveActive
+    ? 'w-[min(96vw,96vh)] max-w-none aspect-square'
+    : touchControlsVisible
+      ? 'w-[min(90vw,calc(100vh-360px))] max-w-[650px]'
+      : 'w-[min(90vw,calc(100vh-180px))] max-w-[650px]';
 
   return (
     <div 
-      className={`relative ${sizeClass} aspect-square mx-auto select-none`} 
+      className={`relative ${sizeClass} aspect-square mx-auto select-none transition-all duration-500 ease-in-out`} 
       id="retro-board-container"
     >
       {/* Outer Retro Bezel / LCD Screen border with hardware aesthetics */}

@@ -8,6 +8,7 @@ interface UseKeyboardControlsProps {
   onTogglePause: () => void;
   onStartGame: () => void;
   onReturnToMenu: () => void;
+  onEscape?: () => void;
 }
 
 export function useKeyboardControls({
@@ -16,6 +17,7 @@ export function useKeyboardControls({
   onTogglePause,
   onStartGame,
   onReturnToMenu,
+  onEscape,
 }: UseKeyboardControlsProps) {
   const [pressedKeys, setPressedKeys] = useState<Record<string, boolean>>({});
 
@@ -25,6 +27,7 @@ export function useKeyboardControls({
   const onTogglePauseRef = useRef(onTogglePause);
   const onStartGameRef = useRef(onStartGame);
   const onReturnToMenuRef = useRef(onReturnToMenu);
+  const onEscapeRef = useRef(onEscape);
 
   useEffect(() => {
     statusRef.current = gameStatus;
@@ -32,7 +35,8 @@ export function useKeyboardControls({
     onTogglePauseRef.current = onTogglePause;
     onStartGameRef.current = onStartGame;
     onReturnToMenuRef.current = onReturnToMenu;
-  }, [gameStatus, onDirectionChange, onTogglePause, onStartGame, onReturnToMenu]);
+    onEscapeRef.current = onEscape;
+  }, [gameStatus, onDirectionChange, onTogglePause, onStartGame, onReturnToMenu, onEscape]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -74,6 +78,12 @@ export function useKeyboardControls({
           case ' ':
             sfx.playClick();
             onTogglePauseRef.current();
+            break;
+          case 'Escape':
+            if (onEscapeRef.current) {
+              sfx.playClick();
+              onEscapeRef.current();
+            }
             break;
         }
       } else if (activeStatus === 'PAUSED') {

@@ -111,6 +111,16 @@ function AppContent() {
 
   const [menuView, setMenuView] = useState<'main' | 'records'>('main');
   const [isDesktop, setIsDesktop] = useState<boolean>(false);
+  const [isImmersiveActive, setIsImmersiveActive] = useState<boolean>(false);
+
+  // Sync immersive mode with active play status
+  useEffect(() => {
+    if (status === 'PLAYING') {
+      setIsImmersiveActive(smartImmersiveMode === 'ON');
+    } else if (status !== 'PAUSED') {
+      setIsImmersiveActive(false);
+    }
+  }, [status, smartImmersiveMode]);
 
   // Smart Immersive HUD states
   const [showQuickMenu, setShowQuickMenu] = useState<boolean>(false);
@@ -161,7 +171,13 @@ function AppContent() {
     onTogglePause: () => {
       if (status === 'PLAYING') {
         sfx.playClick();
-        setIsResting((prev) => !prev);
+        setIsResting((prev) => {
+          const next = !prev;
+          if (!next) {
+            setIsImmersiveActive(smartImmersiveMode === 'ON');
+          }
+          return next;
+        });
       }
     },
     onStartGame: startGame,
@@ -169,6 +185,17 @@ function AppContent() {
       sfx.playClick();
       setMenuView('main');
     },
+    onEscape: () => {
+      if (status === 'PLAYING') {
+        if (isImmersiveActive) {
+          setIsImmersiveActive(false);
+          setIsResting(true);
+        } else {
+          setIsImmersiveActive(true);
+          setIsResting(false);
+        }
+      }
+    }
   });
 
   // Calculate highest score for difficulty preset
@@ -205,7 +232,7 @@ function AppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const showSidePanels = isDesktop && !(smartImmersiveMode === 'ON' && (status === 'PLAYING' || status === 'PAUSED'));
+  const showSidePanels = isDesktop && !isImmersiveActive;
 
   return (
     <div
@@ -231,7 +258,13 @@ function AppContent() {
               onClick={() => {
                 if (status === 'PLAYING') {
                   sfx.playClick();
-                  setIsResting((prev) => !prev);
+                  setIsResting((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setIsImmersiveActive(smartImmersiveMode === 'ON');
+                    }
+                    return next;
+                  });
                 }
               }}
               className="hover:text-yellow-400 cursor-pointer font-bold transition-colors py-1 px-2 rounded hover:bg-white/5 border border-transparent hover:border-current"
@@ -334,7 +367,7 @@ function AppContent() {
       )}
 
       {/* ADAPTIVE CAB PANELS WRAPPER */}
-      <div className="w-full max-w-7xl mx-auto flex-grow flex items-stretch justify-center gap-6 p-4">
+      <div className={`w-full max-w-7xl mx-auto flex-grow flex items-stretch justify-center gap-6 ${isImmersiveActive ? 'p-0 gap-0' : 'p-4'}`}>
         {/* LEFT CABIN PANEL */}
         {showSidePanels && (
           <DesktopLeftPanel
@@ -348,8 +381,12 @@ function AppContent() {
         )}
 
         {/* ARCADE SIMULATION SCREEN */}
-        <div className={`relative flex flex-col items-center justify-center transition-all duration-500 ease-in-out ${showSidePanels ? 'flex-grow border-[6px] border-double p-5 rounded-md bg-black/35 ' + themeColors.borderClass : 'w-full max-w-3xl border-[6px] border-double p-8 rounded-lg bg-black/50 shadow-2xl ' + themeColors.borderClass}`}>
-          {isDesktop && (
+        <div className={
+          isImmersiveActive
+            ? `fixed inset-0 z-40 bg-neutral-950 w-screen h-screen flex flex-col items-center justify-center p-0 m-0 border-0 rounded-none shadow-none transition-all duration-500 ease-in-out`
+            : `relative flex flex-col items-center justify-center transition-all duration-500 ease-in-out ${showSidePanels ? 'flex-grow border-[6px] border-double p-5 rounded-md bg-black/35 ' + themeColors.borderClass : 'w-full max-w-3xl border-[6px] border-double p-8 rounded-lg bg-black/50 shadow-2xl ' + themeColors.borderClass}`
+        }>
+          {isDesktop && !isImmersiveActive && (
             <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-neutral-900 border border-current border-opacity-35 px-3 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest text-[#ffffff]/80">
               <span className="flex items-center gap-1">
                 <span className={`w-1.5 h-1.5 rounded-full ${status === 'PLAYING' ? 'bg-green-400 animate-ping' : 'bg-green-800'}`}></span>
@@ -366,7 +403,7 @@ function AppContent() {
             </div>
           )}
 
-          <main className={`w-full ${status === 'PLAYING' || status === 'PAUSED' ? 'max-w-2xl sm:max-w-max' : 'max-w-md'} mx-auto flex flex-col items-center justify-center transition-all duration-300`}>
+          <main className={`w-full ${isImmersiveActive ? 'max-w-none' : (status === 'PLAYING' || status === 'PAUSED' ? 'max-w-2xl sm:max-w-max' : 'max-w-md')} mx-auto flex flex-col items-center justify-center transition-all duration-300`}>
             
             {/* VIEW 1: MAIN MENU & HALL OF FAME DIRECT INTEGRATION */}
             {status === 'MENU' && (
@@ -432,20 +469,22 @@ function AppContent() {
             {/* VIEW 4: ACTIVE PLAYING HUD & SCREEN CANVAS */}
             {(status === 'PLAYING' || status === 'PAUSED') && (
               <div className="w-full flex flex-col items-center select-none" id="active-play-container">
-                 <CompactHUD
-                  score={score}
-                  maxDifficultyHighscore={maxDifficultyHighscore}
-                  timerSeconds={timerSeconds}
-                  themeColors={themeColors}
-                  tension={tension}
-                  rivals={rivals}
-                  rivalCpuLabel={rivalCpuLabel}
-                  biome={biome}
-                  peers={peers}
-                  connectionState={connectionState}
-                  latency={latency}
-                  status={status}
-                />
+                 <div className={`w-full transition-all duration-500 ease-in-out ${isImmersiveActive ? 'opacity-0 max-h-0 mb-0 overflow-hidden pointer-events-none' : 'opacity-100 max-h-[350px] mb-3'}`}>
+                  <CompactHUD
+                    score={score}
+                    maxDifficultyHighscore={maxDifficultyHighscore}
+                    timerSeconds={timerSeconds}
+                    themeColors={themeColors}
+                    tension={tension}
+                    rivals={rivals}
+                    rivalCpuLabel={rivalCpuLabel}
+                    biome={biome}
+                    peers={peers}
+                    connectionState={connectionState}
+                    latency={latency}
+                    status={status}
+                  />
+                </div>
 
                 <RetroGrid
                   snake={snake}
@@ -476,20 +515,29 @@ function AppContent() {
                   entities={entities}
                   peers={peers}
                   isResting={isResting}
+                  isImmersiveActive={isImmersiveActive}
                 />
 
                 {touchControlsPreference === 'ON' && (
-                  <TouchController
-                    onDirectionChange={handleDirectionChange}
-                    currentDirection={direction}
-                    onTogglePause={() => setIsResting((prev) => !prev)}
-                    isPaused={isResting}
-                    isPlaying={true}
-                    themeColors={themeColors}
-                  />
+                  <div className={isImmersiveActive ? "absolute bottom-4 right-4 z-50 opacity-60 hover:opacity-100 transition-opacity" : ""}>
+                    <TouchController
+                      onDirectionChange={handleDirectionChange}
+                      currentDirection={direction}
+                      onTogglePause={() => setIsResting((prev) => {
+                        const next = !prev;
+                        if (!next) {
+                          setIsImmersiveActive(smartImmersiveMode === 'ON');
+                        }
+                        return next;
+                      })}
+                      isPaused={isResting}
+                      isPlaying={true}
+                      themeColors={themeColors}
+                    />
+                  </div>
                 )}
 
-                <div className="mt-4 flex items-center gap-1 opacity-40 text-[9px] tracking-wider uppercase font-mono text-center">
+                <div className={`mt-4 flex items-center gap-1 opacity-40 text-[9px] tracking-wider uppercase font-mono text-center transition-all duration-500 ease-in-out ${isImmersiveActive ? 'opacity-0 max-h-0 mt-0 overflow-hidden pointer-events-none' : 'opacity-40 max-h-8 mt-4'}`}>
                   <span>{difficulty} Difficulty Mode</span>
                   <span>•</span>
                   <span>Press Space to Rest</span>
