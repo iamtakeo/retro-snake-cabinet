@@ -79,7 +79,7 @@ import { ArenaType, generateObstaclesForArena } from '../utils/arenaManager';
 import { TerrainDecoration, generateTerrainDecorations } from '../utils/terrainManager';
 import { sfx } from '../utils/audio';
 import { generateChunkContent, ChunkContent, getBiomeForChunk } from '../utils/chunkManager';
-import { usePartyKit } from './usePartyKit';
+import { usePartyKit, PeerPlayer } from './usePartyKit';
 import {
   RivalSerpent,
   evaluateTension,
@@ -163,6 +163,7 @@ export function useSnakeEngine({
 
   const [isResting, setIsResting] = useState<boolean>(false);
   const isRestingRef = useRef<boolean>(false);
+  const peersRef = useRef<PeerPlayer[]>([]);
 
   // AI Prey Ecosystem Entities
   const [entities, setEntities] = useState<AIEntity[]>([]);
@@ -222,6 +223,7 @@ export function useSnakeEngine({
     entitiesRef.current = entities;
     isRestingRef.current = isResting;
     openWorldApplesRef.current = openWorldApples;
+    peersRef.current = peers;
 
     // Unidirectional safety guards to prevent React asynchronous batching race conditions from overwriting refs back to false
     if (status === 'MENU') {
@@ -239,7 +241,7 @@ export function useSnakeEngine({
         currentGridSizeRef.current = currentGridSize;
       }
     }
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType, isResting, openWorldApples]);  // Track Game Time Survival
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType, isResting, openWorldApples, peers]);  // Track Game Time Survival
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     if (status === 'PLAYING') {
@@ -291,6 +293,8 @@ export function useSnakeEngine({
     hasEscapedCabinetRef.current = false;
     setOpenWorldApples([]);
     openWorldApplesRef.current = [];
+    setIsResting(false);
+    isRestingRef.current = false;
     if (!themeLocked) {
       const themes: RetroTheme[] = ['GREEN_PHOSPHOR', 'AMBER_CRT', 'CLASSIC_LCD', 'CYBERPUNK', 'MONOCHROME_POCKET'];
       const randomIndex = Math.floor(Math.random() * themes.length);
@@ -841,7 +845,7 @@ export function useSnakeEngine({
       }
 
       // 4.5. Check player collision into active peer player tails (Edge blockades)
-      const playerHitsPeer = peers.some(
+      const playerHitsPeer = peersRef.current.some(
         (p) => p.alive && p.body.some((seg) => seg.x === newHead.x && seg.y === newHead.y)
       );
       if (playerHitsPeer) {
@@ -936,7 +940,7 @@ export function useSnakeEngine({
                   const hitsRival = rivalsRef.current.some(r => r.alive && r.body.some(seg => seg.x === obs.x && seg.y === obs.y));
                   if (hitsRival) return false;
                   
-                  const hitsPeer = peers.some(p => p.alive && p.body.some(seg => seg.x === obs.x && seg.y === obs.y));
+                  const hitsPeer = peersRef.current.some(p => p.alive && p.body.some(seg => seg.x === obs.x && seg.y === obs.y));
                   if (hitsPeer) return false;
                   
                   return true;
@@ -1028,7 +1032,7 @@ export function useSnakeEngine({
         }
       );
       // Check peer head collision into player's body/tail segments (player cuts them off!)
-      peers.forEach((peer) => {
+      peersRef.current.forEach((peer) => {
         if (!peer.alive) return;
         const pHead = peer.body[0];
         if (pHead && nextSnake.some((seg, idx) => idx !== 0 && seg.x === pHead.x && seg.y === pHead.y)) {
@@ -1308,6 +1312,17 @@ export function useSnakeEngine({
           true // alive
         );
       }
+
+      // Restore recursive game tick scheduling with bulletTime support
+      let yieldSpeedOffset = 0;
+      if (coinYield === 'SAFE') yieldSpeedOffset = 30;
+      else if (coinYield === 'HIGH_STAKES') yieldSpeedOffset = -25;
+
+      let finalSpeedMs = Math.max(35, Math.min(250, difficultyConfig.speedMs + adaptiveSpeedOffsetMs + yieldSpeedOffset));
+      if (bulletTimeActive) {
+        finalSpeedMs = Math.round(finalSpeedMs * 1.6);
+      }
+      timeoutId = setTimeout(moveSnake, finalSpeedMs);
     };
 
     let yieldSpeedOffset = 0;

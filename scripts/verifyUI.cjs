@@ -41,9 +41,12 @@ async function runUIReview() {
 
   const page = await browser.newPage();
   
+  page.on('console', msg => console.log('PAGE LOG:', msg.text()));
+  page.on('pageerror', err => console.log('PAGE ERROR:', err.toString()));
+  
   try {
     console.log('📡 Connecting to local cabinet dev server...');
-    await page.goto('http://localhost:3000', { waitUntil: 'networkidle2', timeout: 10000 });
+    await page.goto('http://localhost:3050', { waitUntil: 'networkidle2', timeout: 10000 });
     
     // State 1: Capture Main Menu
     console.log('📷 Capturing State 1: Main Menu...');
@@ -103,6 +106,12 @@ async function runUIReview() {
 
   } catch (err) {
     console.error('❌ Headless review session failed:', err);
+    try {
+      await page.screenshot({ path: path.join(outputDir, 'failure_diagnostic.png') });
+      console.log('Saved diagnostic screenshot to failure_diagnostic.png');
+    } catch (ssErr) {
+      console.error('Failed to capture diagnostic screenshot:', ssErr);
+    }
   } finally {
     await browser.close();
     console.log('🏁 Headless session closed.');
