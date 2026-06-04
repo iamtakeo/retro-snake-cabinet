@@ -21,6 +21,7 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
 
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<PeerPlayer[]>([]);
+  const ticksSinceLastSpawnRef = useRef<number>(0);
 
   // Unique player session ID (persistent in localStorage to prevent rendering self as peer)
   const playerIdRef = useRef<string>(
@@ -201,6 +202,34 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
   ) => {
     if (connectionState !== 'FALLBACK_SIMULATION' || !hasEscapedCabinet) return;
 
+    const findSafeBotSpawn = (
+      pSnake: Position[],
+      obs: Position[],
+      gSize: number,
+      activePeers: PeerPlayer[]
+    ): Position | null => {
+      let tries = 0;
+      const margin = 5;
+      while (tries < 100) {
+        tries++;
+        const x = Math.floor(Math.random() * (gSize - margin * 2)) + margin;
+        const y = Math.floor(Math.random() * (gSize - margin * 2)) + margin;
+        
+        // Cabinet starting safety guard
+        if (x < 25 && y < 25) continue;
+        
+        // Collision checks
+        const hitsPlayer = pSnake.some(seg => seg.x === x && seg.y === y);
+        const hitsObstacle = obs.some(o => o.x === x && o.y === y);
+        const hitsPeer = activePeers.some(peer => peer.alive && peer.body.some(seg => seg.x === x && seg.y === y));
+        
+        if (!hitsPlayer && !hitsObstacle && !hitsPeer) {
+          return { x, y };
+        }
+      }
+      return null;
+    };
+
     // Cycle random emoji chatter floating headers
     const chatEmojis = ['👾', '🔥', '👑', '😎', '👀', '⚡', '✨', '💨', '☠️', '🎯'];
 
@@ -353,8 +382,68 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
       };
     });
 
-    setPeers(updated);
-    peersRef.current = updated;
+    // Increment spawn tick counter
+    ticksSinceLastSpawnRef.current += 1;
+
+    // Filter alive peers from the newly updated list
+    const alivePeers = updated.filter(p => p.alive);
+    const activeCount = alivePeers.length;
+
+    // Cooldown duration between spawns: 120 game ticks (~12-15 seconds)
+    const minSpawnTicks = 120;
+
+    let finalPeers = updated;
+
+    if (activeCount < 4 && ticksSinceLastSpawnRef.current >= minSpawnTicks) {
+      // Find a safe spawn point in the open world
+      const startPos = findSafeBotSpawn(playerSnake, obstacles, gridSize, alivePeers);
+      if (startPos) {
+        // Build a length 3 vertical body extending downwards
+        const body = [
+          { x: startPos.x, y: startPos.y },
+          { x: startPos.x, y: startPos.y + 1 },
+          { x: startPos.x, y: startPos.y + 2 },
+        ];
+
+        // Ensure the entire body is safe from collisions
+        const bodySafe = body.every(pos => {
+          if (pos.y >= gridSize) return false;
+          const hitsPlayer = playerSnake.some(seg => seg.x === pos.x && seg.y === pos.y);
+          const hitsObstacle = obstacles.some(obs => obs.x === pos.x && obs.y === pos.y);
+          const hitsPeer = alivePeers.some(peer => peer.body.some(seg => seg.x === pos.x && seg.y === pos.y));
+          return !hitsPlayer && !hitsObstacle && !hitsPeer;
+        });
+
+        if (bodySafe) {
+          const botNames = ['GlitchGator', 'VectorViper', 'NeonNeedle', 'ChromeCobra', 'TurboTurtle', 'MatrixMamba', 'ArcadeAnonda'];
+          const botColors = ['#22c55e', '#3b82f6', '#a855f7', '#ec4899', '#fb923c', '#06b6d4'];
+          const botEmojis = ['🐉', '🐍', '🦎', '👾', '⚡', '👑', '😎'];
+
+          const name = botNames[Math.floor(Math.random() * botNames.length)] + '_' + Math.floor(Math.random() * 90 + 10);
+          const color = botColors[Math.floor(Math.random() * botColors.length)];
+          const emoji = botEmojis[Math.floor(Math.random() * botEmojis.length)];
+
+          const newBot: PeerPlayer = {
+            id: 'bot_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+            name,
+            body,
+            dir: 'UP',
+            color,
+            score: 40 + Math.floor(Math.random() * 90),
+            latency: 2 + Math.floor(Math.random() * 5),
+            emoji,
+            emojiTicks: 25,
+            alive: true
+          };
+
+          finalPeers = [...updated, newBot];
+          ticksSinceLastSpawnRef.current = 0; // reset cooldown
+        }
+      }
+    }
+
+    setPeers(finalPeers);
+    peersRef.current = finalPeers;
   };
 
   const killPeer = (id: string) => {
