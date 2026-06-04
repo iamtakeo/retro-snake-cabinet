@@ -615,7 +615,7 @@ export function useSnakeEngine({
         
         // Update Edge P2P Simulated active peers
         updateSimulatedPeers(snakeRef.current, obstaclesRef.current, foodRef.current, currentGridSizeRef.current, () => {
-          sfx.playEat();
+          sfx.playEat(true);
           const nextFood = generateRandomCell(snakeRef.current, obstaclesRef.current, currentGridSizeRef.current);
           setFood(nextFood);
           foodRef.current = nextFood;
@@ -1017,14 +1017,14 @@ export function useSnakeEngine({
         foodRef.current,
         currentGridSizeRef.current,
         () => {
-          sfx.playEat();
+          sfx.playEat(true);
           const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
           setFood(nextFood);
           foodRef.current = nextFood;
         },
         openWorldApplesRef.current,
         (idx) => {
-          sfx.playEat();
+          sfx.playEat(true);
           const updatedApples = [...openWorldApplesRef.current];
           updatedApples[idx] = generateRandomCell(nextSnake, obstaclesRef.current, 100);
           setOpenWorldApples(updatedApples);

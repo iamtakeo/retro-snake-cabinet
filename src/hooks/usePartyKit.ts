@@ -242,15 +242,30 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
         return true;
       });
 
-      if (safeDirections.length === 0) {
-        // Fallback inevitable crash path
+      // Opposing direction lookup helper
+      const opposite: Record<Direction, Direction> = {
+        UP: 'DOWN',
+        DOWN: 'UP',
+        LEFT: 'RIGHT',
+        RIGHT: 'LEFT',
+      };
+
+      // 2.5% chance bot makes a pathfinding error (ignores safe directions, just doesn't turn backwards)
+      const hasError = Math.random() < 0.025;
+      let activeSafeDirections = safeDirections;
+
+      if (hasError) {
+        activeSafeDirections = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as Direction[]).filter(d => d !== opposite[peer.dir]);
+      }
+
+      if (activeSafeDirections.length === 0) {
         return { ...peer, alive: false };
       }
 
       // Dynamic pathfinding: scan core food + all open world apples to find and slither towards the closest target
       let chosenDir = peer.dir;
       const allApples = food ? [food, ...openWorldApples] : openWorldApples;
-      if (allApples.length > 0) {
+      if (allApples.length > 0 && activeSafeDirections.length > 0) {
         let closestApple = allApples[0];
         let minDist = Infinity;
         allApples.forEach((apple) => {
@@ -261,22 +276,41 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
           }
         });
 
-        safeDirections.sort((a, b) => {
+        activeSafeDirections.sort((a, b) => {
           const distA = Math.abs(head.x + dirs[a].x - closestApple.x) + Math.abs(head.y + dirs[a].y - closestApple.y);
           const distB = Math.abs(head.x + dirs[b].x - closestApple.x) + Math.abs(head.y + dirs[b].y - closestApple.y);
           return distA - distB;
         });
-        chosenDir = safeDirections[0];
-      } else {
+        chosenDir = activeSafeDirections[0];
+      } else if (activeSafeDirections.length > 0) {
         // Random wandering vectors
-        if (safeDirections.includes(peer.dir) && Math.random() < 0.88) {
+        if (activeSafeDirections.includes(peer.dir) && Math.random() < 0.88) {
           chosenDir = peer.dir;
         } else {
-          chosenDir = safeDirections[Math.floor(Math.random() * safeDirections.length)];
+          chosenDir = activeSafeDirections[Math.floor(Math.random() * activeSafeDirections.length)];
         }
       }
 
       const nextHead = { x: head.x + dirs[chosenDir].x, y: head.y + dirs[chosenDir].y };
+
+      // Post-move actual collision check
+      const outOfBounds = nextHead.x < 0 || nextHead.x >= gridSize || nextHead.y < 0 || nextHead.y >= gridSize;
+      const hitsCabinetLimit = nextHead.x < 25 && nextHead.y < 25;
+      const hitsObstacle = obstacles.some((obs) => obs.x === nextHead.x && obs.y === nextHead.y);
+      const hitsPlayer = playerSnake.some((seg) => seg.x === nextHead.x && seg.y === nextHead.y);
+      const hitsSelfOrPeer = peersRef.current.some((other) => {
+        if (!other.alive) return false;
+        if (other.id === peer.id) {
+          // Exclude head from self-collision checks
+          return peer.body.some((seg) => seg.x === nextHead.x && seg.y === nextHead.y);
+        }
+        return other.body.some((seg) => seg.x === nextHead.x && seg.y === nextHead.y);
+      });
+
+      if (outOfBounds || hitsCabinetLimit || hitsObstacle || hitsPlayer || hitsSelfOrPeer) {
+        return { ...peer, alive: false };
+      }
+
       const nextBody = [nextHead, ...peer.body];
 
       // Check if peer consumed food

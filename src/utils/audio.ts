@@ -70,7 +70,7 @@ class RetroAudioEngine {
     sound.osc.stop(this.ctx.currentTime + 0.04);
   }
 
-  public playEat(): void {
+  public playEat(isQuiet: boolean = false): void {
     // Double-tone rapid sparkle/chirp
     if (this.isMuted || !this.initContext() || !this.ctx) return;
 
@@ -87,8 +87,9 @@ class RetroAudioEngine {
     osc2.frequency.setValueAtTime(783.99, t); // G5
     osc2.frequency.setValueAtTime(1046.50, t + 0.06); // C6
 
-    gainNode.gain.setValueAtTime(0.08, t);
-    gainNode.gain.setValueAtTime(0.08, t + 0.06);
+    const vol = isQuiet ? 0.015 : 0.08;
+    gainNode.gain.setValueAtTime(vol, t);
+    gainNode.gain.setValueAtTime(vol, t + 0.06);
     gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
 
     osc1.connect(gainNode);

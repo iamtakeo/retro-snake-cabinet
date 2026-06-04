@@ -149,6 +149,7 @@ export default function RetroGrid({
   const prevSlipstreamRef = useRef<'NONE' | 'DRIFT'>('NONE');
   const prevRivalsRef = useRef<RivalSerpent[]>([]);
   const prevEntitiesRef = useRef<AIEntity[]>([]);
+  const prevPeersRef = useRef<any[]>([]);
 
   // Synchronize dynamic updates for high-performance retrieval inside the 60fps raf loop
   useEffect(() => {
@@ -230,6 +231,22 @@ export default function RetroGrid({
       }
     });
     prevEntitiesRef.current = entities;
+
+    // P2P Peer crash burst reaction (when a peer dies)
+    prevPeersRef.current.forEach((prevPeer) => {
+      const stillAlive = peers.some((p) => p.id === prevPeer.id && p.alive);
+      if (!stillAlive && prevPeer.alive) {
+        const pHead = prevPeer.body[0];
+        if (pHead) {
+          engine.spawnBurst(pHead.x, pHead.y, cellSize, prevPeer.color || '#ec4899', 24);
+          engine.spawnFloatingText(pHead.x, pHead.y, cellSize, `${prevPeer.name || 'PEER'} CRASHED! ☠️`, prevPeer.color || '#ec4899');
+          engine.triggerShake(10);
+          engine.triggerFlash('rgba(239, 68, 68, 0.12)', 0.5, 0.04);
+          sfx.playObstacleHit();
+        }
+      }
+    });
+    prevPeersRef.current = peers;
 
     // 1. Scoring event reactions (Standard Apple vs Legendary Golden Star Apple)
     if (score > prevScoreRef.current) {
