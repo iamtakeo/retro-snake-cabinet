@@ -186,8 +186,9 @@ export default function RetroGrid({
     const engine = effectsEngineRef.current;
     if (!engine) return;
 
-    const canvasSize = 600;
-    const cellSize = canvasSize / 25; // Viewport-sized cells (24px)
+    const canvasEl = canvasRef.current;
+    const height = canvasEl ? canvasEl.clientHeight : 600;
+    const cellSize = height / 25; // Viewport-sized cells dynamically calculated
 
     // 0.5. Spawning a Glitch Rival alert flash & screen shake
     if (rivals.length > prevRivalsRef.current.length && prevRivalsRef.current.length === 0) {
@@ -288,9 +289,9 @@ export default function RetroGrid({
     const engine = effectsEngineRef.current;
     if (!engine) return;
 
-    const canvasSize = 600;
-    const VIEWPORT_CELLS = 25;
-    const cellSize = canvasSize / VIEWPORT_CELLS;
+    const canvasEl = canvasRef.current;
+    const height = canvasEl ? canvasEl.clientHeight : 600;
+    const cellSize = height / 25; // Viewport-sized cells dynamically calculated
 
     if (breachActive) {
       engine.triggerShake(24);
@@ -304,9 +305,9 @@ export default function RetroGrid({
     const engine = effectsEngineRef.current;
     if (!engine) return;
 
-    const canvasSize = 600;
-    const VIEWPORT_CELLS = 25;
-    const cellSize = canvasSize / VIEWPORT_CELLS;
+    const canvasEl = canvasRef.current;
+    const height = canvasEl ? canvasEl.clientHeight : 600;
+    const cellSize = height / 25; // Viewport-sized cells dynamically calculated
 
     if (hasEscapedCabinet) {
       engine.triggerShake(22);
@@ -322,9 +323,9 @@ export default function RetroGrid({
     const engine = effectsEngineRef.current;
     if (!engine) return;
 
-    const canvasSize = 600;
-    const VIEWPORT_CELLS = 25;
-    const cellSize = canvasSize / VIEWPORT_CELLS;
+    const canvasEl = canvasRef.current;
+    const height = canvasEl ? canvasEl.clientHeight : 600;
+    const cellSize = height / 25; // Viewport-sized cells dynamically calculated
 
     if (slipstream !== prevSlipstreamRef.current) {
       if (slipstream === 'DRIFT') {
@@ -360,21 +361,28 @@ export default function RetroGrid({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const canvasSize = 600;
-    canvas.width = canvasSize;
-    canvas.height = canvasSize;
-
     let animationFrameId: number;
     const engine = effectsEngineRef.current;
 
     const renderLoop = () => {
       // Draw frame context
       const state = stateRef.current;
+
+      // Dynamically resize canvas resolution buffer to match CSS layout bounds at 60fps
+      const currentWidth = canvas.clientWidth || 600;
+      const currentHeight = canvas.clientHeight || 600;
+      if (canvas.width !== currentWidth || canvas.height !== currentHeight) {
+        canvas.width = currentWidth;
+        canvas.height = currentHeight;
+      }
+
+      const width = canvas.width;
+      const height = canvas.height;
       
-      // We always render a fixed 25x25 tile window.
-      // E.g., if the map is 50x50, we show a zoomed viewport so cells represent the exact same 24px width!
-      const VIEWPORT_CELLS = 25;
-      const cellSize = canvasSize / VIEWPORT_CELLS; // Always 24px (600 / 25)
+      // Keep vertical size constant at 25 cells (vertical zoom factor of cabinet), and scale width horizontally
+      const VIEWPORT_CELLS_Y = 25;
+      const cellSize = height / VIEWPORT_CELLS_Y;
+      const viewportCellsX = width / cellSize;
 
       // Calculate sliding camera center on the snake head
       const head = state.snake[0] || { x: 12, y: 12 };
@@ -383,8 +391,8 @@ export default function RetroGrid({
       let cameraCellY = 0;
 
       if (state.hasEscapedCabinet) {
-        const targetCameraX = head.x - Math.floor(VIEWPORT_CELLS / 2);
-        const targetCameraY = head.y - Math.floor(VIEWPORT_CELLS / 2);
+        const targetCameraX = head.x - viewportCellsX / 2;
+        const targetCameraY = head.y - VIEWPORT_CELLS_Y / 2;
 
         // Snap camera instantly on the very first frame after escaping to prevent long scroll lag
         if (cameraRef.current.x === 0 && cameraRef.current.y === 0) {
@@ -406,9 +414,9 @@ export default function RetroGrid({
         cameraCellY = 0;
       }
 
-      // 1. Clear with matrix grid background
+      // 1. Clear with matrix grid background (full widescreen bounds)
       ctx.fillStyle = state.themeColors.gridBackground;
-      ctx.fillRect(0, 0, canvasSize, canvasSize);
+      ctx.fillRect(0, 0, width, height);
 
       // Save context state for screen shake and scrolling camera transformations
       ctx.save();
@@ -839,10 +847,12 @@ export default function RetroGrid({
         ctx.strokeStyle = state.themeColors.gridLine;
         ctx.lineWidth = 1;
 
+        const viewportCellsY = height / cellSize;
+
         const startX = Math.floor(cameraCellX) - 1;
-        const endX = Math.ceil(cameraCellX) + VIEWPORT_CELLS + 1;
+        const endX = Math.ceil(cameraCellX) + viewportCellsX + 1;
         const startY = Math.floor(cameraCellY) - 1;
-        const endY = Math.ceil(cameraCellY) + VIEWPORT_CELLS + 1;
+        const endY = Math.ceil(cameraCellY) + viewportCellsY + 1;
 
         // Draw vertical lines
         for (let i = startX; i <= endX; i++) {
@@ -1531,17 +1541,17 @@ export default function RetroGrid({
       // 8. Draw pause overlay directly on top
       if (state.gameStatus === 'PAUSED') {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.fillRect(0, 0, canvasSize, canvasSize);
+        ctx.fillRect(0, 0, width, height);
 
         ctx.fillStyle = state.themeColors.snakeHead;
         ctx.font = "bold 32px 'Courier New', Courier, monospace";
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('GAME PAUSED', canvasSize / 2, canvasSize / 2 - 20);
+        ctx.fillText('GAME PAUSED', width / 2, height / 2 - 20);
 
         ctx.font = "16px 'Courier New', Courier, monospace";
         ctx.fillStyle = '#ffffff';
-        ctx.fillText('PRESS SPACE BAR TO CONTINUE', canvasSize / 2, canvasSize / 2 + 25);
+        ctx.fillText('PRESS SPACE BAR TO CONTINUE', width / 2, height / 2 + 25);
       }
 
       // 8.5. Draw resting / standby indicator
@@ -1571,7 +1581,7 @@ export default function RetroGrid({
         ctx.shadowColor = ctx.fillStyle;
         
         const paddedScore = state.score.toLocaleString(undefined, { minimumIntegerDigits: 5, useGrouping: false });
-        ctx.fillText(`SCORE: ${paddedScore}`, canvasSize - 15, 15);
+        ctx.fillText(`SCORE: ${paddedScore}`, width - 15, 15);
         ctx.restore();
       }
 
@@ -1590,14 +1600,16 @@ export default function RetroGrid({
   }, []);
 
   const sizeClass = isImmersiveActive
-    ? 'w-[min(96vw,96vh)] max-w-none aspect-square'
+    ? (hasEscapedCabinet 
+        ? 'w-[98vw] h-[98vh] max-w-none' 
+        : 'w-[min(96vw,96vh)] max-w-none aspect-square')
     : touchControlsVisible
-      ? 'w-[min(90vw,calc(100vh-360px))] max-w-[650px]'
-      : 'w-[min(90vw,calc(100vh-180px))] max-w-[650px]';
+      ? 'w-[min(90vw,calc(100vh-360px))] max-w-[650px] aspect-square'
+      : 'w-[min(90vw,calc(100vh-180px))] max-w-[650px] aspect-square';
 
   return (
     <div 
-      className={`relative ${sizeClass} aspect-square mx-auto select-none transition-all duration-500 ease-in-out`} 
+      className={`relative ${sizeClass} mx-auto select-none transition-all duration-500 ease-in-out`} 
       id="retro-board-container"
     >
       {/* Outer Retro Bezel / LCD Screen border with hardware aesthetics */}
