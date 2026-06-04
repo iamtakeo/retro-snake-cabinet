@@ -39,6 +39,7 @@ interface RetroGridProps {
   // Open World cabinet escape props
   breachActive?: boolean;
   hasEscapedCabinet?: boolean;
+  openWorldApples?: Position[];
 
   // AI Prey Ecosystem Entities
   entities?: AIEntity[];
@@ -79,6 +80,7 @@ export default function RetroGrid({
   biome = 'GLITCH_VOID',
   breachActive = false,
   hasEscapedCabinet = false,
+  openWorldApples = [],
   entities = [],
   peers = [],
   isResting = false,
@@ -88,6 +90,7 @@ export default function RetroGrid({
   
   // Persistent smooth-lerp viewport camera coordinates
   const cameraRef = useRef<{ x: number; y: number }>({ x: 12, y: 12 });
+  const wallOpacityRef = useRef<number>(1.0);
   
   // Persistent, isolated modular effects engine
   const effectsEngineRef = useRef<EffectsEngine>(new EffectsEngine());
@@ -174,12 +177,13 @@ export default function RetroGrid({
       biome,
       breachActive,
       hasEscapedCabinet,
+      openWorldApples,
       entities,
       peers,
       isResting,
       isImmersiveActive,
     };
-  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, entities, peers, isResting, isImmersiveActive]);
+  }, [snake, direction, food, goldenFood, obstacles, themeColors, gridSize, gameStatus, themeKey, showGridLines, score, activeHat, activeBody, activeParticle, laserGatesActive, laserGateObstacles, slipstreamDir, slipstream, terrainDecorations, rivals, tension, biome, breachActive, hasEscapedCabinet, openWorldApples, entities, peers, isResting, isImmersiveActive]);
 
   // Reactive effect triggers to emit visual rewards (Juice Injection)
   useEffect(() => {
@@ -367,6 +371,15 @@ export default function RetroGrid({
     const renderLoop = () => {
       // Draw frame context
       const state = stateRef.current;
+
+      // Smoothly fade cabinet wall opacity
+      if (state.hasEscapedCabinet) {
+        if (wallOpacityRef.current > 0) {
+          wallOpacityRef.current = Math.max(0, wallOpacityRef.current - 0.015);
+        }
+      } else {
+        wallOpacityRef.current = 1.0;
+      }
 
       // Dynamically resize canvas resolution buffer to match CSS layout bounds at 60fps
       const currentWidth = canvas.clientWidth || 600;
@@ -870,13 +883,12 @@ export default function RetroGrid({
           ctx.stroke();
         }
       }
-
       // Draw cabinet boundaries (only for 25x25 cabinet or when escaped the cabinet into the open world)
-      if (state.gridSize === 25 || state.gridSize === 100) {
+      if ((state.gridSize === 25 || state.gridSize === 100) && wallOpacityRef.current > 0) {
         ctx.save();
+        ctx.globalAlpha = wallOpacityRef.current;
         ctx.strokeStyle = state.themeColors.snakeHead;
-        ctx.lineWidth = 3;
-        
+        ctx.lineWidth = 3;        
         const mapWidth = 25 * cellSize;
         
         // Top boundary line
@@ -1037,9 +1049,9 @@ export default function RetroGrid({
       });
 
       // 4. Draw Core Food
-      if (state.food) {
-        const appleX = state.food.x * cellSize;
-        const appleY = state.food.y * cellSize;
+      const drawApple = (cellX: number, cellY: number) => {
+        const appleX = cellX * cellSize;
+        const appleY = cellY * cellSize;
 
         ctx.fillStyle = state.themeColors.food;
         ctx.fillRect(appleX + 4, appleY + 6, cellSize - 8, cellSize - 10);
@@ -1052,6 +1064,17 @@ export default function RetroGrid({
           ctx.fillStyle = '#34d399';
           ctx.fillRect(appleX + cellSize / 2 + 1, appleY + 1, 3, 2);
         }
+      };
+
+      if (state.food) {
+        drawApple(state.food.x, state.food.y);
+      }
+
+      // Draw scattered open world apples
+      if (state.hasEscapedCabinet && state.openWorldApples && state.openWorldApples.length > 0) {
+        state.openWorldApples.forEach((apple) => {
+          drawApple(apple.x, apple.y);
+        });
       }
 
       // 5. Draw Golden Powerup Apple

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "retro-snake-cabinet",
+  "main": "party/index.ts",
+  "compatibilityDate": "2023-05-26"
+}

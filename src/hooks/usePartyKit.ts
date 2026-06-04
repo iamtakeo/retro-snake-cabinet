@@ -22,12 +22,24 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<PeerPlayer[]>([]);
 
+  // Unique player session ID (persistent in localStorage to prevent rendering self as peer)
+  const playerIdRef = useRef<string>(
+    (typeof window !== 'undefined' && localStorage.getItem('retro_snake_player_id')) || 
+    'player_' + Math.random().toString(36).substring(2, 11)
+  );
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('retro_snake_player_id', playerIdRef.current);
+    }
+  }, []);
+
   // Track active room peers in reference for optimized loop access
   useEffect(() => {
     peersRef.current = peers;
   }, [peers]);
 
-  // Establish high-performance edge connection to PartyKit websocket rooms
+  // Establish connection to PartyKit websocket rooms
   useEffect(() => {
     if (status !== 'PLAYING') {
       setPeers([]);
@@ -38,8 +50,12 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
 
     setConnectionState('CONNECTING');
     
-    // Configurable PartyKit Edge server URL (iamtakeo custom room)
-    const socketUrl = 'wss://retro-snake.iamtakeo.partykit.dev/party/void-lobby';
+    // Configurable PartyKit Edge server URL (detect local dev mode)
+    const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const socketUrl = isDev 
+      ? 'ws://localhost:1999/party/void-lobby' 
+      : 'wss://retro-snake.iamtakeo.partykit.dev/party/void-lobby';
+      
     let timeoutId: NodeJS.Timeout | null = null;
 
     try {
@@ -55,7 +71,9 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'state_sync' && data.peers) {
-            setPeers(data.peers);
+            // Filter out our own player connection so we don't render self twice
+            const otherPeers = data.peers.filter((p: PeerPlayer) => p.id !== playerIdRef.current);
+            setPeers(otherPeers);
           }
         } catch (e) {
           // Silent JSON parsing fallbacks
@@ -70,14 +88,14 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
         // Failover handled by open timeout
       };
 
-      // Safe Connection Timeout: if offline or blocked, trigger high-fidelity local edge P2P simulation!
+      // Safe Connection Timeout: if offline or blocked, trigger simulated peer bots
       timeoutId = setTimeout(() => {
         if (ws.readyState !== WebSocket.OPEN) {
           ws.close();
           setConnectionState('FALLBACK_SIMULATION');
-          setLatency(2 + Math.floor(Math.random() * 4)); // ultra-low simulated peer latency
+          setLatency(2 + Math.floor(Math.random() * 4)); // simulated peer latency
           
-          // Seed initial high-fidelity P2P simulated peer worms
+          // Seed initial P2P simulated peer bots
           const initialPeers: PeerPlayer[] = [
             {
               id: 'peer_cyber',
@@ -146,13 +164,40 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
     };
   }, [status]);
 
-  // Trigger high-performance simulated peer movement ticks aligned to main game loop
+  // Send local player state up to PartyKit edge server
+  const sendPlayerState = (
+    body: Position[],
+    dir: Direction,
+    score: number,
+    name: string,
+    color: string,
+    emoji: string,
+    alive: boolean
+  ) => {
+    if (socketRef.current && connectionState === 'CONNECTED' && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: 'player_state',
+        id: playerIdRef.current,
+        name,
+        body,
+        dir,
+        color,
+        score,
+        emoji,
+        alive
+      }));
+    }
+  };
+
+  // Trigger simulated peer movement ticks aligned to main game loop
   const updateSimulatedPeers = (
     playerSnake: Position[],
     obstacles: Position[],
     food: Position | null,
     gridSize: number,
-    onEatFood: () => void
+    onEatFood: () => void,
+    openWorldApples: Position[] = [],
+    onEatOpenWorldApple?: (idx: number) => void
   ) => {
     if (connectionState !== 'FALLBACK_SIMULATION' || !hasEscapedCabinet) return;
 
@@ -170,7 +215,7 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
         RIGHT: { x: 1, y: 0 },
       };
 
-      // Filter safe direction vectors (no out of bounds, no obstacles, no colliding player tail segments or peer segments)
+      // Filter safe direction vectors
       const safeDirections = (['UP', 'DOWN', 'LEFT', 'RIGHT'] as Direction[]).filter((d) => {
         const nextX = head.x + dirs[d].x;
         const nextY = head.y + dirs[d].y;
@@ -202,12 +247,23 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
         return { ...peer, alive: false };
       }
 
-      // Dynamic pathfinding: sort safe vectors to greedily reduce distance to closest food target
+      // Dynamic pathfinding: scan core food + all open world apples to find and slither towards the closest target
       let chosenDir = peer.dir;
-      if (food) {
+      const allApples = food ? [food, ...openWorldApples] : openWorldApples;
+      if (allApples.length > 0) {
+        let closestApple = allApples[0];
+        let minDist = Infinity;
+        allApples.forEach((apple) => {
+          const dist = Math.abs(head.x - apple.x) + Math.abs(head.y - apple.y);
+          if (dist < minDist) {
+            minDist = dist;
+            closestApple = apple;
+          }
+        });
+
         safeDirections.sort((a, b) => {
-          const distA = Math.abs(head.x + dirs[a].x - food.x) + Math.abs(head.y + dirs[a].y - food.y);
-          const distB = Math.abs(head.x + dirs[b].x - food.x) + Math.abs(head.y + dirs[b].y - food.y);
+          const distA = Math.abs(head.x + dirs[a].x - closestApple.x) + Math.abs(head.y + dirs[a].y - closestApple.y);
+          const distB = Math.abs(head.x + dirs[b].x - closestApple.x) + Math.abs(head.y + dirs[b].y - closestApple.y);
           return distA - distB;
         });
         chosenDir = safeDirections[0];
@@ -227,7 +283,13 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
       let ate = false;
       if (food && nextHead.x === food.x && nextHead.y === food.y) {
         ate = true;
-        onEatFood(); // callback to regenerate food coordinate
+        onEatFood();
+      } else if (openWorldApples.length > 0 && onEatOpenWorldApple) {
+        const eatenIdx = openWorldApples.findIndex((apple) => nextHead.x === apple.x && nextHead.y === apple.y);
+        if (eatenIdx !== -1) {
+          ate = true;
+          onEatOpenWorldApple(eatenIdx);
+        }
       }
 
       if (!ate) {
@@ -271,6 +333,7 @@ export function usePartyKit(hasEscapedCabinet: boolean, status: string) {
     peers,
     connectionState,
     latency,
+    sendPlayerState,
     updateSimulatedPeers,
     killPeer
   };

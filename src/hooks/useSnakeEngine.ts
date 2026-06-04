@@ -87,7 +87,6 @@ import {
   computeMorphedObstacles,
   evaluateRivalDifficulty,
 } from '../utils/directorManager';
-
 interface UseSnakeEngineProps {
   difficulty: DifficultyLevel;
   themeLocked: boolean;
@@ -96,8 +95,10 @@ interface UseSnakeEngineProps {
   adaptiveComplexityOffset: number;
   adaptiveSpeedOffsetMs: number;
   setCustomization: Dispatch<SetStateAction<CustomizationState>>;
-
   modifiers: GameModifiers;
+  playerName?: string;
+  playerColor?: string;
+  playerEmoji?: string;
 }
 
 export function useSnakeEngine({
@@ -109,6 +110,9 @@ export function useSnakeEngine({
   adaptiveSpeedOffsetMs,
   setCustomization,
   modifiers,
+  playerName = 'PLY',
+  playerColor = '#33ff33',
+  playerEmoji = '',
 }: UseSnakeEngineProps) {
   const {
     foodMode,
@@ -149,13 +153,13 @@ export function useSnakeEngine({
   // AI Director States
   const [tension, setTension] = useState<number>(0.0);
   const [rivals, setRivals] = useState<RivalSerpent[]>([]);
-  const [biome, setBiome] = useState<'NEON_GRID' | 'SAND_RUINS' | 'TOXIC_WASTE' | 'GLITCH_VOID'>('GLITCH_VOID');
-
-  // Open World cabinet escape states & refs
+  const [biome, setBiome] = useState<'NEON_GRID' | 'SAND_RUINS' | 'TOXIC_WASTE' | 'GLITCH_VOID'>('GLITCH_VOID');  // Open World cabinet escape states & refs
   const [breachActive, setBreachActive] = useState<boolean>(false);
   const [hasEscapedCabinet, setHasEscapedCabinet] = useState<boolean>(false);
   const breachActiveRef = useRef<boolean>(false);
   const hasEscapedCabinetRef = useRef<boolean>(false);
+  const [openWorldApples, setOpenWorldApples] = useState<Position[]>([]);
+  const openWorldApplesRef = useRef<Position[]>([]);
 
   const [isResting, setIsResting] = useState<boolean>(false);
   const isRestingRef = useRef<boolean>(false);
@@ -169,10 +173,10 @@ export function useSnakeEngine({
     peers,
     connectionState,
     latency,
+    sendPlayerState,
     updateSimulatedPeers,
     killPeer
   } = usePartyKit(hasEscapedCabinet, status);
-
   // Open World Procedural Chunk System Cache & Refs
   const loadedChunksRef = useRef<Map<string, ChunkContent>>(new Map());
   const currentChunkRef = useRef<{ cx: number; cy: number }>({ cx: -999, cy: -999 });
@@ -217,6 +221,7 @@ export function useSnakeEngine({
     rivalsRef.current = rivals;
     entitiesRef.current = entities;
     isRestingRef.current = isResting;
+    openWorldApplesRef.current = openWorldApples;
 
     // Unidirectional safety guards to prevent React asynchronous batching race conditions from overwriting refs back to false
     if (status === 'MENU') {
@@ -234,9 +239,7 @@ export function useSnakeEngine({
         currentGridSizeRef.current = currentGridSize;
       }
     }
-  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType, isResting]);
-
-  // Track Game Time Survival
+  }, [snake, direction, food, goldenFood, obstacles, score, status, currentGridSize, rivals, breachActive, hasEscapedCabinet, entities, arenaType, isResting, openWorldApples]);  // Track Game Time Survival
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     if (status === 'PLAYING') {
@@ -281,13 +284,13 @@ export function useSnakeEngine({
   // Initialise/Start game run
   const startGame = useCallback(() => {
     sfx.playPowerUp();
-
     // Reset open world escape variables
     setBreachActive(false);
     breachActiveRef.current = false;
     setHasEscapedCabinet(false);
     hasEscapedCabinetRef.current = false;
-
+    setOpenWorldApples([]);
+    openWorldApplesRef.current = [];
     if (!themeLocked) {
       const themes: RetroTheme[] = ['GREEN_PHOSPHOR', 'AMBER_CRT', 'CLASSIC_LCD', 'CYBERPUNK', 'MONOCHROME_POCKET'];
       const randomIndex = Math.floor(Math.random() * themes.length);
@@ -1003,15 +1006,27 @@ export function useSnakeEngine({
       }
 
       const nextSnake = [newHead, ...snakeRef.current];
-
       // 3.5. Update Edge P2P Simulated active peers
-      updateSimulatedPeers(nextSnake, obstaclesRef.current, foodRef.current, currentGridSizeRef.current, () => {
-        sfx.playEat();
-        const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
-        setFood(nextFood);
-        foodRef.current = nextFood;
-      });
-
+      updateSimulatedPeers(
+        nextSnake,
+        obstaclesRef.current,
+        foodRef.current,
+        currentGridSizeRef.current,
+        () => {
+          sfx.playEat();
+          const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
+          setFood(nextFood);
+          foodRef.current = nextFood;
+        },
+        openWorldApplesRef.current,
+        (idx) => {
+          sfx.playEat();
+          const updatedApples = [...openWorldApplesRef.current];
+          updatedApples[idx] = generateRandomCell(nextSnake, obstaclesRef.current, 100);
+          setOpenWorldApples(updatedApples);
+          openWorldApplesRef.current = updatedApples;
+        }
+      );
       // Check peer head collision into player's body/tail segments (player cuts them off!)
       peers.forEach((peer) => {
         if (!peer.alive) return;
@@ -1146,9 +1161,10 @@ export function useSnakeEngine({
 
       setEntities(finalEntities);
       entitiesRef.current = finalEntities;
-
       let ateFood = false;
       let ateGolden = false;
+      let ateOpenWorldApple = false;
+      let eatenAppleIndex = -1;
 
       if (foodRef.current && newHead.x === foodRef.current.x && newHead.y === foodRef.current.y) {
         ateFood = true;
@@ -1164,7 +1180,15 @@ export function useSnakeEngine({
         sfx.playGoldenEat();
       }
 
-      if (ateFood) {
+      if (hasEscapedCabinetRef.current && openWorldApplesRef.current.length > 0) {
+        eatenAppleIndex = openWorldApplesRef.current.findIndex(apple => newHead.x === apple.x && newHead.y === apple.y);
+        if (eatenAppleIndex !== -1) {
+          ateOpenWorldApple = true;
+          sfx.playEat();
+        }
+      }
+
+      if (ateFood || ateOpenWorldApple) {
         timeSinceLastEatRef.current = 0;
         setApplesEaten((prev) => prev + 1);
         const addedScore = Math.round(10 * difficultyConfig.scoreMultiplier * scoreYieldMultiplier);
@@ -1178,13 +1202,22 @@ export function useSnakeEngine({
           coins: prev.coins + earnedCoinsNum,
         }));
 
-        const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
-        setFood(nextFood);
+        if (ateFood) {
+          const nextFood = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current);
+          setFood(nextFood);
+          foodRef.current = nextFood;
+        } else {
+          const updatedApples = [...openWorldApplesRef.current];
+          updatedApples[eatenAppleIndex] = generateRandomCell(nextSnake, obstaclesRef.current, 100);
+          setOpenWorldApples(updatedApples);
+          openWorldApplesRef.current = updatedApples;
+        }
 
         const rollGolden = Math.random() < 0.3 && !goldenFoodRef.current;
         if (rollGolden) {
-          const nextGold = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current, nextFood);
+          const nextGold = generateRandomCell(nextSnake, obstaclesRef.current, currentGridSizeRef.current, foodRef.current);
           setGoldenFood(nextGold);
+          goldenFoodRef.current = nextGold;
           goldenTicksRemainingRef.current = 40;
         }
       } else if (ateGolden) {
@@ -1202,11 +1235,13 @@ export function useSnakeEngine({
         }));
 
         setGoldenFood(null);
+        goldenFoodRef.current = null;
       }
 
       // Metabolic Growth factor segment updates
       let growThisTick = false;
-      if (ateFood || ateGolden || ateMouse) {
+
+      if (ateFood || ateOpenWorldApple || ateGolden || ateMouse) {
         if (growthFactor === 1) {
           growThisTick = true;
         } else if (growthFactor === 2) {
@@ -1251,19 +1286,28 @@ export function useSnakeEngine({
         const allMice = [...entitiesRef.current, ...extraMice];
         setEntities(allMice);
         entitiesRef.current = allMice;
+
+        // Spawn 15 apples in the open world
+        const initialApples: Position[] = [];
+        for (let i = 0; i < 15; i++) {
+          initialApples.push(generateRandomCell(nextSnake, obstaclesRef.current, 100));
+        }
+        setOpenWorldApples(initialApples);
+        openWorldApplesRef.current = initialApples;
       }
 
-      // Safe vs High Stakes speed calibrations
-      let yieldSpeedOffset = 0;
-      if (coinYield === 'SAFE') yieldSpeedOffset = 30;
-      else if (coinYield === 'HIGH_STAKES') yieldSpeedOffset = -25;
-
-      let finalSpeedMs = Math.max(35, Math.min(250, difficultyConfig.speedMs + adaptiveSpeedOffsetMs + yieldSpeedOffset));
-      if (bulletTimeActive) {
-        finalSpeedMs = Math.round(finalSpeedMs * 1.6);
+      // Broadcast player state to PartyKit edge server
+      if (connectionState === 'CONNECTED') {
+        sendPlayerState(
+          nextSnake,
+          nextDirectionRef.current,
+          scoreRef.current,
+          playerName,
+          playerColor,
+          playerEmoji,
+          true // alive
+        );
       }
-
-      timeoutId = setTimeout(moveSnake, finalSpeedMs);
     };
 
     let yieldSpeedOffset = 0;
@@ -1310,6 +1354,7 @@ export function useSnakeEngine({
     // Open world cabinet breach escape states
     breachActive,
     hasEscapedCabinet,
+    openWorldApples,
 
     // Expose entities to props
     entities,

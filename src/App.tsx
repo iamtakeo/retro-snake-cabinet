@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GameStatus, GameModifiers } from './types';
+import { GameStatus, GameModifiers, SHOP_ITEMS } from './types';
 import RetroGrid from './components/RetroGrid';
 import TouchController from './components/TouchController';
 import MainMenuView from './components/MainMenuView';
@@ -85,6 +85,7 @@ function AppContent() {
     terrainDecorations,
     breachActive,
     hasEscapedCabinet,
+    openWorldApples,
     entities,
     peers,
     connectionState,
@@ -107,6 +108,9 @@ function AppContent() {
       laserGates,
       slipstream,
     },
+    playerName: highscores && highscores.length > 0 ? highscores[0].name : 'PLY',
+    playerColor: themeColors.snakeHead,
+    playerEmoji: customization.activeHat !== 'NONE' ? (SHOP_ITEMS.find(s => s.codename === customization.activeHat && s.category === 'HAT')?.emoji || '') : '',
   });
 
   const [menuView, setMenuView] = useState<'main' | 'records'>('main');
@@ -512,6 +516,7 @@ function AppContent() {
                   terrainDecorations={terrainDecorations}
                   breachActive={breachActive}
                   hasEscapedCabinet={hasEscapedCabinet}
+                  openWorldApples={openWorldApples}
                   entities={entities}
                   peers={peers}
                   isResting={isResting}
